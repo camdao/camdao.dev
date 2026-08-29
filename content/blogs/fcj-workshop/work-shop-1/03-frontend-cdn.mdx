@@ -31,24 +31,6 @@ Mô hình phân phối tĩnh (Static Website Hosting) bảo mật chuẩn AWS s�
   </Card>
 </Cards>
 
-```mermaid
-graph LR
-    User[User Browser] -->|HTTPS Requests| CDN[Amazon CloudFront CDN\nEdge Locations]
-    
-    subgraph PrivateS3Zone ["Private S3 Buckets (Block Public Access)"]
-        FrontendBucket[("S3: neonfoodmap-frontend\nReact SPA Assets")]
-        MediaBucket[("S3: neonfoodmap-media\nPOI Images & Audio")]
-    end
-
-    subgraph VPCZone ["VPC App Zone"]
-        ALB[Application Load Balancer]
-    end
-
-    CDN -->|OAC Authentication| FrontendBucket
-    CDN -->|OAC Authentication| MediaBucket
-    CDN -->|Path: /api/*| ALB
-```
-
 <Callout type="info" title="Ưu điểm vượt trội của mô hình OAC vs Static Website Hosting truyền thống">
   Trước đây AWS sử dụng **Origin Access Identity (OAI)** hoặc bật *Static Website Hosting* công khai S3 Bucket. Với **Origin Access Control (OAC)** mới, S3 Bucket vẫn giữ `Block All Public Access: Enabled`, hỗ trợ mã hóa Server-Side Encryption (SSE-KMS) và phòng chống tấn công DDoS trực tiếp vào S3 origin.
 </Callout>
@@ -72,18 +54,18 @@ Chúng ta cần tạo 4 S3 Buckets phân tách đúng chức năng nghiệp vụ
 
 <Step>
 ### Bước 1: Khởi tạo Buckets & Bật Bucket Versioning
-1. Đăng nhập **Amazon S3 Console** $\rightarrow$ bấm **Create bucket**.
+1. Đăng nhập **Amazon S3 Console** -> bấm **Create bucket**.
 2. Nhập tên bucket duy nhất toàn cầu (ví dụ: `neonfoodmap-frontend-us-east-1`).
 3. **Region:** Chọn cùng Region với VPC (`us-east-1` N. Virginia).
 4. Giữ nguyên **Block All Public Access** ở trạng thái **Enabled**.
-5. Chọn tab **Properties** $\rightarrow$ Tại mục **Bucket Versioning**, chọn **Enable** đối với `media` và `audio` bucket để bảo vệ dữ liệu khỏi bị ghi đè hoặc xóa nhầm.
+5. Chọn tab **Properties** -> Tại mục **Bucket Versioning**, chọn **Enable** đối với `media` và `audio` bucket để bảo vệ dữ liệu khỏi bị ghi đè hoặc xóa nhầm.
 </Step>
 
 <Step>
 ### Bước 2: Thiết lập Lifecycle Rule tối ưu chi phí lưu trữ
 Dữ liệu hình ảnh và audio sau 90 ngày ít khi thay đổi sẽ tự động chuyển sang tầng lưu trữ **Standard-Infrequent Access (Standard-IA)** để tiết kiệm 40% chi phí.
 
-1. Vào tab **Management** tại `media` bucket $\rightarrow$ bấm **Create lifecycle rule**.
+1. Vào tab **Management** tại `media` bucket -> bấm **Create lifecycle rule**.
 2. Đặt tên rule: `Move-to-IA-after-90d`.
 3. Chọn **Apply to all objects in the bucket**.
 4. Tích chọn **Transition current versions of objects between storage classes**.
@@ -107,7 +89,7 @@ CloudFront đóng vai trò là điểm tiếp nhận duy nhất (Single Point of
 
 <Step>
 ### Bước 1: Tạo OAC (Origin Access Control)
-1. Mở **CloudFront Console** $\rightarrow$ chọn **Origin access** bên menu trái.
+1. Mở **CloudFront Console** -> chọn **Origin access** bên menu trái.
 2. Bấm **Create control setting**:
    - **Name:** `OAC-NeonFoodMap-S3`
    - **Signing behavior:** Sign requests (recommended)
@@ -117,9 +99,9 @@ CloudFront đóng vai trò là điểm tiếp nhận duy nhất (Single Point of
 
 <Step>
 ### Bước 2: Khởi tạo CloudFront Distribution
-1. Mở **Distributions** $\rightarrow$ bấm **Create distribution**.
+1. Mở **Distributions** -> bấm **Create distribution**.
 2. **Origin domain:** Chọn bucket `neonfoodmap-frontend-dev.s3.us-east-1.amazonaws.com`.
-3. **Origin access:** Chọn **Origin access control settings (recommended)** $\rightarrow$ chọn `OAC-NeonFoodMap-S3`.
+3. **Origin access:** Chọn **Origin access control settings (recommended)** -> chọn `OAC-NeonFoodMap-S3`.
 4. **Default cache behavior:**
    - Viewer protocol policy: **Redirect HTTP to HTTPS**
    - Allowed HTTP methods: `GET, HEAD`

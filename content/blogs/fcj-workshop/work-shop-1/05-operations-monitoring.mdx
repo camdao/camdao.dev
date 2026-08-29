@@ -25,22 +25,14 @@ Trong Part 5 này, chúng ta sẽ thiết lập trọn bộ giải pháp giám s
 
 Để vừa đảm bảo tính sẵn sàng cao, vừa kiểm soát tối ưu chi phí, ta thiết lập hạn mức số lượng Fargate Task hoạt động từ **2 đến 6 tasks**.
 
-```mermaid
-graph LR
-    Metrics[CloudWatch Metrics\nAverage CPU Utilization] -->|CPU > 70%| ScaleOut[Scale-Out: Tăng Tasks\nCooldown: 60s]
-    Metrics -->|CPU < 70%| ScaleIn[Scale-In: Giảm Tasks\nCooldown: 300s]
-    ScaleOut --> Limit[Giới hạn: Min 2 - Max 6 Tasks]
-    ScaleIn --> Limit
-```
-
 ### Các bước thiết lập Target Tracking Policy
 
 <Steps>
 
 <Step>
 ### Bước 1: Bật Service Auto Scaling
-1. Truy cập **Amazon ECS Console** $\rightarrow$ **Clusters** $\rightarrow$ `neonfoodmap-cluster`.
-2. Select service `neonfoodmap-backend-service` $\rightarrow$ bấm **Update**.
+1. Truy cập **Amazon ECS Console** -> **Clusters** -> `neonfoodmap-cluster`.
+2. Select service `neonfoodmap-backend-service` -> bấm **Update**.
 3. Tại mục **Service auto scaling**, tích chọn **Use service auto scaling**.
 4. Cấu hình **Capacity limits**:
    - Minimum number of tasks: `2`
@@ -91,9 +83,9 @@ Khi CPU Backend vượt quá 80% liên tục trong 5 phút, hệ thống sẽ t�
 
 <Step>
 ### Bước 1: Tạo Amazon SNS Topic & Email Subscription
-1. Mở **Amazon SNS Console** $\rightarrow$ **Topics** $\rightarrow$ bấm **Create topic**.
-2. Type: **Standard**, Name: `NeonFoodMap-Alerts-Topic` $\rightarrow$ bấm **Create topic**.
-3. Chọn tab **Subscriptions** $\rightarrow$ **Create subscription**.
+1. Mở **Amazon SNS Console** -> **Topics** -> bấm **Create topic**.
+2. Type: **Standard**, Name: `NeonFoodMap-Alerts-Topic` -> bấm **Create topic**.
+3. Chọn tab **Subscriptions** -> **Create subscription**.
 4. **Protocol:** Select `Email`.
 5. **Endpoint:** Nhập địa chỉ email cá nhân hoặc email nhóm vận hành.
 6. Mở Hộp thư đến Email và bấm **Confirm Subscription**.
@@ -101,14 +93,14 @@ Khi CPU Backend vượt quá 80% liên tục trong 5 phút, hệ thống sẽ t�
 
 <Step>
 ### Bước 2: Khai báo CloudWatch Alarm
-1. Mở **CloudWatch Console** $\rightarrow$ **Alarms** $\rightarrow$ bấm **Create alarm**.
-2. Select metric: `ECS` $\rightarrow$ `ClusterName, ServiceName` $\rightarrow$ `CPUUtilization`.
+1. Mở **CloudWatch Console** -> **Alarms** -> bấm **Create alarm**.
+2. Select metric: `ECS` -> `ClusterName, ServiceName` -> `CPUUtilization`.
 3. **Conditions:**
    - Threshold type: Static
    - Whenever CPUUtilization is: **Greater than 80**
    - Period: **5 minutes**
 4. **Actions:** Under *In ALARM state*, select SNS Topic `NeonFoodMap-Alerts-Topic`.
-5. **Alarm name:** `ECS-Backend-High-CPU-Alarm` $\rightarrow$ Bấm **Create alarm**.
+5. **Alarm name:** `ECS-Backend-High-CPU-Alarm` -> Bấm **Create alarm**.
 </Step>
 
 </Steps>

@@ -21,31 +21,6 @@ Mô hình thực tế sử dụng containerization với **Amazon ECS Fargate** 
 
 Traffic từ Internet đi qua ALB nằm ở Public Subnet, được chuyển tiếp an toàn tới ECS Fargate Tasks đặt ở Private Subnet. Các ECS Tasks kết nối trực tiếp tới Amazon RDS MySQL thông qua Security Group kiên cố.
 
-```mermaid
-graph TD
-    Client[Internet Clients] --> ALB[Application Load Balancer\nPublic Subnet]
-
-    subgraph VPC ["VPC: fcj-workshop-vpc (10.0.0.0/16)"]
-        subgraph PublicZone ["Public Subnets (Multi-AZ)"]
-            ALB
-        end
-
-        subgraph PrivateZone ["Private App Subnets (Multi-AZ)"]
-            Task1["ECS Fargate Task 1\nDjango API (Port 8000)"]
-            Task2["ECS Fargate Task 2\nDjango API (Port 8000)"]
-        end
-
-        subgraph DBZone ["Private Database Subnets (Multi-AZ)"]
-            RDS[("Amazon RDS MySQL 8.0\n(Port 3306)")]
-        end
-    end
-
-    ALB -->|Target Group: TG-NeonFoodMap-BE| Task1
-    ALB -->|Target Group: TG-NeonFoodMap-BE| Task2
-    Task1 -->|MySQL Protocol| RDS
-    Task2 -->|MySQL Protocol| RDS
-```
-
 <Callout type="info" title="Vì sao lựa chọn ECS Fargate thay vì EC2 truyền thống?">
   **AWS Fargate** giúp bạn vận hành container theo dạng Serverless: không cần quản lý EC2 OS, không lo vá lỗi kernel hay cấu hình Auto Scaling Group cho cluster node. Bạn chỉ trả chi phí theo đúng lượng CPU và RAM mà Task tiêu thụ.
 </Callout>
@@ -64,19 +39,19 @@ Trước khi tạo RDS Instance, ta cần nhóm các Private Subnet và cấu h�
 
 <Step>
 ### Bước 1: Tạo DB Subnet Group
-1. Truy cập **Amazon RDS Console** $\rightarrow$ chọn **Subnet groups** $\rightarrow$ bấm **Create DB Subnet Group**.
+1. Truy cập **Amazon RDS Console** -> chọn **Subnet groups** -> bấm **Create DB Subnet Group**.
 2. Đặt tên `neonfoodmap-db-subnet-group`.
 3. Chọn VPC `fcj-workshop-vpc`.
 4. Tại mục **Availability Zones**, chọn 2 AZs (`us-east-1a`, `us-east-1b`).
-5. Chọn 2 **Private Database Subnets** đã tạo ở Part 1 $\rightarrow$ Bấm **Create**.
+5. Chọn 2 **Private Database Subnets** đã tạo ở Part 1 -> Bấm **Create**.
 </Step>
 
 <Step>
 ### Bước 2: Tạo Custom Parameter Group cho MySQL 8.0
-1. Vào mục **Parameter groups** $\rightarrow$ bấm **Create parameter group**.
+1. Vào mục **Parameter groups** -> bấm **Create parameter group**.
 2. Chọn **Parameter group family**: `mysql8.0`.
 3. Đặt tên **Group name**: `neonfoodmap-mysql80-params`.
-4. Sau khi tạo, chọn Parameter Group này $\rightarrow$ bấm **Edit**.
+4. Sau khi tạo, chọn Parameter Group này -> bấm **Edit**.
 5. Cập nhật 2 tham số quan trọng:
    - `character_set_server` = `utf8mb4`
    - `collation_server` = `utf8mb4_unicode_ci`
@@ -91,8 +66,8 @@ Trước khi tạo RDS Instance, ta cần nhóm các Private Subnet và cấu h�
 
 <Tab value="AWS Console">
 
-1. Vào **RDS Console** $\rightarrow$ **Databases** $\rightarrow$ bấm **Create database**.
-2. Chọn **Standard create** $\rightarrow$ **MySQL** (Engine version 8.0.x).
+1. Vào **RDS Console** -> **Databases** -> bấm **Create database**.
+2. Chọn **Standard create** -> **MySQL** (Engine version 8.0.x).
 3. **Templates:** Chọn *Free tier* hoặc *Dev/Test*.
 4. **Settings:**
    - DB instance identifier: `neonfoodmap-mysql-db`
@@ -158,7 +133,7 @@ Application Load Balancer đóng vai trò tiếp nhận traffic HTTP/HTTPS từ 
 
 <Step>
 ### Bước 1: Khai báo Target Group
-1. Mở **EC2 Console** $\rightarrow$ **Target Groups** $\rightarrow$ bấm **Create target group**.
+1. Mở **EC2 Console** -> **Target Groups** -> bấm **Create target group**.
 2. **Target type:** Chọn **IP addresses** (bắt buộc đối với AWS Fargate networking mode `awsvpc`).
 3. **Target group name:** `TG-NeonFoodMap-BE`.
 4. **Protocol / Port:** `HTTP` / `8000` (Port mà Django Gunicorn container đang lắng nghe).
@@ -175,7 +150,7 @@ Application Load Balancer đóng vai trò tiếp nhận traffic HTTP/HTTPS từ 
    - Timeout: `5 seconds`
    - Interval: `30 seconds`
    - Success codes: `200`
-4. Bấm **Next** $\rightarrow$ Bỏ qua bước đăng ký IP thủ công (ECS Service sẽ tự động đăng ký target IP khi khởi chạy task) $\rightarrow$ Bấm **Create target group**.
+4. Bấm **Next** -> Bỏ qua bước đăng ký IP thủ công (ECS Service sẽ tự động đăng ký target IP khi khởi chạy task) -> Bấm **Create target group**.
 </Step>
 
 </Steps>
@@ -186,8 +161,8 @@ Application Load Balancer đóng vai trò tiếp nhận traffic HTTP/HTTPS từ 
 
 <Tab value="AWS Console">
 
-1. Mở **EC2 Console** $\rightarrow$ **Load Balancers** $\rightarrow$ bấm **Create load balancer**.
-2. Select **Application Load Balancer** $\rightarrow$ Bấm **Create**.
+1. Mở **EC2 Console** -> **Load Balancers** -> bấm **Create load balancer**.
+2. Select **Application Load Balancer** -> Bấm **Create**.
 3. **Basic configuration:** Name `ALB-NeonFoodMap`, Scheme `Internet-facing`, IP address type `IPv4`.
 4. **Network mapping:** VPC `fcj-workshop-vpc`, Mapped subnets: Chọn `us-east-1a` (`fcj-public-subnet-1`) và `us-east-1b` (`fcj-public-subnet-2`).
 5. **Security groups:** Chọn `alb-sg`.
@@ -234,20 +209,6 @@ aws elbv2 create-listener \
 ## Triển khai Backend Service lên Amazon ECS Fargate
 
 Tầng ứng dụng chạy Django API sẽ được đóng gói thành Docker Image đẩy lên **Amazon ECR**, sau đó định nghĩa **ECS Task Definition** để khởi chạy trên **AWS Fargate**.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant ECR as Amazon ECR
-    participant ECS as ECS Fargate Service
-    participant CW as CloudWatch Logs
-    participant SM as Secrets Manager
-
-    ECS->>ECR: 1. Pull Docker Image (latest)
-    ECS->>SM: 2. Inject DB_PASSWORD & Credentials
-    ECS->>CW: 3. Stream Container Stdout/Stderr Logs
-    ECS->>ALB: 4. Register Task IP to Target Group
-```
 
 ### Khởi tạo ECS Task Definition
 
@@ -334,7 +295,7 @@ aws ecs create-service \
 Sau khi ECS Service chuyển sang trạng thái `ACTIVE` và các Tasks bắt đầu chạy, bạn hãy xác nhận quá trình hoạt động bằng các bước sau:
 
 1. **Kiểm tra Target Group Health:**  
-   Vào **EC2 Console** $\rightarrow$ **Target Groups** $\rightarrow$ `TG-NeonFoodMap-BE`. Đảm bảo cả 2 IP Target đều báo trạng thái **Healthy**.
+   Vào **EC2 Console** -> **Target Groups** -> `TG-NeonFoodMap-BE`. Đảm bảo cả 2 IP Target đều báo trạng thái **Healthy**.
 2. **Test API qua ALB DNS:**  
    Lấy DNS Name của ALB và gửi HTTP Request kiểm tra endpoint:
    ```bash

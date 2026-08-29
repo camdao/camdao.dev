@@ -21,15 +21,6 @@ Tuy nhiên, công việc thực sự chỉ hoàn tất khi bạn dọn dẹp (Cl
 
 Khi tiêu hủy hạ tầng AWS thủ công hoặc qua CLI, bạn **không thể xóa VPC** nếu các tài nguyên bên trong (như ECS Tasks, ALB, RDS hay Security Groups) vẫn đang hoạt động. Bạn bắt buộc phải thực hiện xóa theo đúng quy trình **từ tầng ngoài cùng vào tầng lõi mạng**.
 
-```mermaid
-graph TD
-    Step1["1. CloudFront & S3 Buckets\n(Xóa Distribution & Empty S3 Buckets)"] --> Step2["2. ECS Service & Tasks\n(Scale Desired Count về 0 & Delete Service)"]
-    Step2 --> Step3["3. Application Load Balancer & Target Groups\n(Xóa Listener & Delete ALB)"]
-    Step3 --> Step4["4. Amazon RDS MySQL Database\n(Skip Final Snapshot nếu test)"]
-    Step4 --> Step5["5. Security Groups & IAM Roles\n(Bỏ liên kết Security Group)"]
-    Step5 --> Step6["6. Internet Gateway & Custom VPC\n(Detach IGW & Delete VPC)"]
-```
-
 ---
 
 ## Hướng dẫn Cleanup Từng Bước (Step-by-Step)
