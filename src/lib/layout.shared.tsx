@@ -5,14 +5,21 @@ import { FumadocsLogo } from '@/components/FumadocsLogo';
 export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
-      // JSX supported
-      title: ( 
+      title: (
         <div className="flex items-center gap-2 font-semibold">
           <FumadocsLogo />
           <span className="font-medium">{appName}</span>
         </div>
       ),
     },
+    links: [
+      {
+        text: 'Blog',
+        url: '/docs',
+        active: 'nested-url',
+        on: 'nav',
+      },
+    ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };
 }

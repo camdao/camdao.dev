@@ -1,0 +1,59 @@
+---
+title: Giới thiệu | Camdao Dev
+description: Backend-Developer.
+---
+
+import ContactInfo from "@/components/ui/ContactInfo";
+import AboutMe from "@/components/ui/AboutMe";
+import Education from "@/components/ui/Education";
+
+<div className="flex flex-col md:flex-row gap-6">
+  <ContactInfo />
+  <AboutMe />
+</div>
+
+---
+
+## 💼 **Career**
+
+### Backend Developer Intern — CTCP Bến Xe Tàu Phà Cần Thơ
+*06/2026 ~ 08/2026 · Remote*
+
+**Tech stack:** ASP.NET Core · Entity Framework Core · SQL Server · RESTful API · Postman
+
+- Xây dựng RESTful API với **ASP.NET Core + Entity Framework Core** phục vụ hệ thống nghiệp vụ nội bộ.
+- Implement các chức năng **filtering, pagination và data retrieval**.
+- Xử lý business logic và truy vấn **SQL Server**, bao gồm tổng hợp dữ liệu từ nhiều entity.
+- Sử dụng **Postman và SQL** để kiểm thử, xác minh dữ liệu và debug API.
+
+---
+
+## 🚀 **Personal Experience**
+
+### Booking Ticket Online (2026.02 ~ 2026.05)
+> Hệ thống đặt vé trực tuyến với xử lý giữ chỗ, thanh toán và kiểm soát đồng thời.
+
+**Tech stack:** Java · Spring Boot · MySQL · Redis · Docker · AWS · VNPay  
+**GitHub:** [ticket-online](https://github.com/camdao/ticket-online)
+
+- Xây dựng backend cho hệ thống đặt vé trực tuyến: đặt vé, giữ chỗ và thanh toán.
+- Sử dụng **Redis Distributed Lock** (Redisson) để kiểm soát việc nhiều người dùng cùng chọn một ghế.
+- Áp dụng **TTL** cho ghế đang được giữ để tự động giải phóng khi người dùng không hoàn tất thanh toán.
+- Sử dụng **Redis Lua Script** để thực hiện các thao tác giữ ghế nguyên tử (atomic operations), hạn chế race condition khi có nhiều request đồng thời.
+
+---
+
+## 🛠️ **Available Skills**
+
+- **Front-End:** JavaScript, TypeScript, React.js, Next.js, React Query
+- **Back-End:** Java (Spring Boot, Spring Data JPA, Spring Security, Spring WebFlux), C# (.NET Core), Node.js
+- **AWS:** EC2, S3, Lambda, CloudFront, RDS, Route53, IAM, ECS Fargate, ECR, ALB
+- **Database:** MySQL, PostgreSQL, SQL Server, Redis
+- **DevOps & Tools:** Docker, Docker Compose, Nginx, GitHub Actions, Git
+- **IDEs & Collaboration:** IntelliJ IDEA, VS Code, Postman, Notion
+
+---
+
+## 🎓 **Education**
+
+<Education />
