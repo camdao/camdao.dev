@@ -1,5 +1,5 @@
 export const appName = 'Camdao';
-export const docsRoute = '/docs';
+export const docsRoute = '/blogs';
 export const docsImageRoute = '/og/docs';
 export const docsContentRoute = '/llms.mdx/docs';
 

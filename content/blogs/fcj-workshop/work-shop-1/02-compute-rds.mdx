@@ -1,0 +1,46 @@
+---
+title: "Part 2: Compute & Database Layer"
+description: "Hướng dẫn khởi tạo EC2 App Instances, Application Load Balancer (ALB) và Amazon RDS"
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Part 2: Compute & Database Layer
+
+Trong phần này, chúng ta sẽ dựng tầng ứng dụng (Compute Layer) và tầng cơ sở dữ liệu (Database Layer).
+
+---
+
+## 🎯 Mục tiêu
+- Triển khai EC2 Instance làm Web/App Server.
+- Cấu hình Application Load Balancer (ALB) điều hướng traffic.
+- Khởi tạo Amazon RDS (PostgreSQL/MySQL) trong Private Subnet.
+
+---
+
+## 🛠️ Các bước thực hiện
+
+<Steps>
+
+<Step>
+### Bước 1: Khởi tạo Amazon RDS Instance
+Tạo csdl trong Private Subnet để đảm bảo an toàn dữ liệu.
+</Step>
+
+<Step>
+### Bước 2: Triển khai EC2 Instances
+Khởi tạo EC2 Instances chạy ứng dụng web.
+</Step>
+
+<Step>
+### Bước 3: Cấu hình Application Load Balancer (ALB)
+Tạo Target Group và ALB để phân phối lưu lượng truy cập.
+</Step>
+
+</Steps>
+
+---
+
+## ➡️ Bài tiếp theo
+Đến với [Part 3: Security & IAM Governance](./03-security-iam).

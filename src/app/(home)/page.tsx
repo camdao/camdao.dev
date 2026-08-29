@@ -18,7 +18,7 @@ export default function HomePage() {
       <div className="flex flex-col justify-center items-center flex-1 p-8 text-center">
         <h1 className="text-xl font-bold">Chưa tìm thấy file camdao-introduce.mdx</h1>
         <p className="text-muted-foreground mt-2">
-          Vui lòng tạo file tại <code>content/docs/camdao-introduce.mdx</code>
+          Vui lòng tạo file tại <code>content/blogs/camdao-introduce.mdx</code>
         </p>
       </div>
     );

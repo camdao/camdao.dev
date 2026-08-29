@@ -1,0 +1,12 @@
+{
+  "title": "FCJ Workshop Season 1",
+  "pages": [
+    "--- Workshop Series ---",
+    "overview",
+    "--- Bài thực hành ---",
+    "01-vpc-networking",
+    "02-compute-rds",
+    "03-security-iam",
+    "04-cleanup-summary"
+  ]
+}

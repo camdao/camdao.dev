@@ -1,0 +1,45 @@
+---
+title: "Part 4: Cleanup & Lessons Learned"
+description: "Hướng dẫn tiêu hủy tài nguyên an toàn tránh phát sinh chi phí và tổng kết workshop"
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Part 4: Cleanup & Lessons Learned
+
+Chúc mừng bạn đã hoàn thành bài lab! Bước cuối cùng nhưng vô cùng quan trọng là dọn dẹp các tài nguyên đã tạo để tránh phát sinh chi phí AWS ngoài ý muốn.
+
+---
+
+## 🧹 Các bước Cleanup (Dọn dẹp tài nguyên)
+
+<Callout type="warn">
+  Hãy làm theo đúng thứ tự bên dưới để tránh lỗi không xóa được do tài nguyên phụ thuộc lẫn nhau.
+</Callout>
+
+<Steps>
+
+<Step>
+### 1. Xóa Application Load Balancer & Target Groups
+</Step>
+
+<Step>
+### 2. Terminate EC2 Instances
+</Step>
+
+<Step>
+### 3. Xóa Database Amazon RDS
+</Step>
+
+<Step>
+### 4. Xóa VPC & Internet Gateway
+</Step>
+
+</Steps>
+
+---
+
+## 💡 Tổng kết bài học (Lessons Learned)
+- **High Availability:** Triển khai đa AZ giúp hệ thống có khả năng chịu lỗi cao.
+- **Security:** Luôn giấu Database và Server nội bộ trong Private Subnet.

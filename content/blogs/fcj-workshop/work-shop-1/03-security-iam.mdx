@@ -1,0 +1,40 @@
+---
+title: "Part 3: Security & IAM Governance"
+description: "Cấu hình Security Groups, IAM Roles và quản lý mật khẩu qua Secrets Manager"
+---
+
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+# Part 3: Security & IAM Governance
+
+Trong phần này, chúng ta sẽ áp dụng các nguyên tắc bảo mật (Security Best Practices) cho toàn bộ hệ thống.
+
+---
+
+## 🎯 Mục tiêu
+- Cấu hình Security Groups theo nguyên tắc **Least Privilege**.
+- Tạo IAM Role cho EC2 truy cập dịch vụ AWS an toàn.
+- Quản lý credentials với AWS Secrets Manager.
+
+---
+
+## 🛠️ Các bước thực hiện
+
+<Steps>
+
+<Step>
+### Bước 1: Thiết lập Security Groups
+Tạo các Security Groups cho ALB, EC2 và RDS.
+</Step>
+
+<Step>
+### Bước 2: Tạo IAM Instance Profile
+Cấp quyền hạn tối thiểu cho EC2.
+</Step>
+
+</Steps>
+
+---
+
+## ➡️ Bài tiếp theo
+Đến với [Part 4: Cleanup & Summary](./04-cleanup-summary).
