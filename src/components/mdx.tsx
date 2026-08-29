@@ -1,9 +1,11 @@
 import defaultMdxComponents from 'fumadocs-ui/mdx';
 import type { MDXComponents } from 'mdx/types';
+import { IndexCategoryCards } from '@/components/IndexCategoryCards';
 
 export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
+    IndexCategoryCards,
     ...components,
   } satisfies MDXComponents;
 }
