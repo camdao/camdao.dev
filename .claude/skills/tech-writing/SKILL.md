@@ -27,3 +27,14 @@ This skill helps you write high-quality technical blog posts for `camdao.dev`.
 ## Guidelines
 - Write clear, practical, production-oriented tech content.
 - Keep formatting clean with standard frontmatter (title, date, description, tags).
+- **Tone & Style (Anti-AI Fluff):**
+  - **No Emoji in Headings:** Absolutely avoid using emojis (e.g., 🎯, 🚀, 💡, 🏗️) in Markdown headings (`#`, `##`, `###`).
+  - **Direct & Concise:** Avoid generic AI intros and conclusions (e.g., "Welcome to this guide", "In conclusion"). Jump straight to the technical content.
+  - **Engineering Focus:** Highlight real-world gotchas, edge cases, and practical trade-offs over high-level marketing descriptions.
+- **Fumadocs UI & Rich MDX Components:**
+  - **Icons:** Prefer Lucide icons (via `lucide-react`) in `<Card icon={...}>` over raw emojis for visual elements.
+  - **Grid & Navigation:** Use `<Cards>` & `<Card>` for learning objectives, module lists, and feature grids.
+  - **Sequential Workflows:** Use `<Steps>` & `<Step>` for tutorials, step-by-step guides, and prerequisites.
+  - **Alerts & Warnings:** Use `<Callout type="warn|info|error">` for critical notes (e.g., AWS cost warnings, safety checks).
+  - **Multi-variant Options:** Use `<Tabs>` & `<Tab>` for multi-OS commands, multi-language code snippets, or alternative solutions.
+  - **Diagrams:** Use native `mermaid` code blocks for architecture diagrams.

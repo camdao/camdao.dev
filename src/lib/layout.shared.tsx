@@ -16,8 +16,7 @@ export function baseOptions(): BaseLayoutProps {
       {
         text: 'Blog',
         url: '/blogs',
-        active: 'nested-url',
-        on: 'nav',
+        on: 'all',
       },
     ],
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,

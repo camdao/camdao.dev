@@ -20,6 +20,7 @@ const ContactInfo: React.FC = () => {
         <p><strong>Education:</strong> Trường Đại học Sài Gòn</p>
         <p><strong>Github:</strong> <a href="https://github.com/camdao" target="_blank" rel="noreferrer" className="underline">github.com/camdao</a></p>
         <p><strong>LinkedIn:</strong> <a href="https://www.linkedin.com/in/camdao04/" target="_blank" rel="noreferrer" className="underline">linkedin.com/in/camdao04</a></p>
+        <p><strong>Blog:</strong> <a href="https://camdao-dev.vercel.app/blogs" target="_blank" rel="noreferrer" className="underline">camdao-dev.vercel.app/blogs</a></p>
       </div>
       <div className="mt-3 p-2 bg-muted rounded text-xs text-muted-foreground">
         Java · Spring Boot · JPA · MySQL · PostgreSQL · Redis · AWS

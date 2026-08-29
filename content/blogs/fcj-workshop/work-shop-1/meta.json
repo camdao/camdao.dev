@@ -6,7 +6,9 @@
     "--- Bài thực hành ---",
     "01-vpc-networking",
     "02-compute-rds",
-    "03-security-iam",
-    "04-cleanup-summary"
+    "03-frontend-cdn",
+    "04-security-iam-cicd",
+    "05-operations-monitoring",
+    "06-cleanup-summary"
   ]
 }

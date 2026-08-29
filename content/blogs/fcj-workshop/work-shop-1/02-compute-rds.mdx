@@ -1,46 +1,366 @@
 ---
-title: "Part 2: Compute & Database Layer"
-description: "Hướng dẫn khởi tạo EC2 App Instances, Application Load Balancer (ALB) và Amazon RDS"
+title: "Part 2: Compute, Container & Database Layer"
+description: "Hướng dẫn chi tiết triển khai Amazon RDS MySQL, ECS Fargate Container Service và Application Load Balancer (ALB) chuẩn Production."
 ---
 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Database, Server, Cpu, Shield, Layers, RefreshCw, Network, Globe } from 'lucide-react';
 
-# Part 2: Compute & Database Layer
+# Part 2: Compute, Container & Database Layer
 
-Trong phần này, chúng ta sẽ dựng tầng ứng dụng (Compute Layer) và tầng cơ sở dữ liệu (Database Layer).
+Sau khi dựng hạ tầng mạng chuẩn ở **Part 1**, bước tiếp theo là xây dựng tầng xử lý ứng dụng (Compute Layer) và cơ sở dữ liệu (Database Layer).
 
----
-
-## 🎯 Mục tiêu
-- Triển khai EC2 Instance làm Web/App Server.
-- Cấu hình Application Load Balancer (ALB) điều hướng traffic.
-- Khởi tạo Amazon RDS (PostgreSQL/MySQL) trong Private Subnet.
+Mô hình thực tế sử dụng containerization với **Amazon ECS Fargate** (Serverless Compute) để chạy backend Django API, kết hợp cùng **Amazon RDS MySQL** đặt hoàn toàn trong Private Database Subnets và **Application Load Balancer (ALB)** để định tuyến traffic từ Internet.
 
 ---
 
-## 🛠️ Các bước thực hiện
+## Kiến trúc Tổng quan
+
+Traffic từ Internet đi qua ALB nằm ở Public Subnet, được chuyển tiếp an toàn tới ECS Fargate Tasks đặt ở Private Subnet. Các ECS Tasks kết nối trực tiếp tới Amazon RDS MySQL thông qua Security Group kiên cố.
+
+```mermaid
+graph TD
+    Client[Internet Clients] --> ALB[Application Load Balancer\nPublic Subnet]
+
+    subgraph VPC ["VPC: fcj-workshop-vpc (10.0.0.0/16)"]
+        subgraph PublicZone ["Public Subnets (Multi-AZ)"]
+            ALB
+        end
+
+        subgraph PrivateZone ["Private App Subnets (Multi-AZ)"]
+            Task1["ECS Fargate Task 1\nDjango API (Port 8000)"]
+            Task2["ECS Fargate Task 2\nDjango API (Port 8000)"]
+        end
+
+        subgraph DBZone ["Private Database Subnets (Multi-AZ)"]
+            RDS[("Amazon RDS MySQL 8.0\n(Port 3306)")]
+        end
+    end
+
+    ALB -->|Target Group: TG-NeonFoodMap-BE| Task1
+    ALB -->|Target Group: TG-NeonFoodMap-BE| Task2
+    Task1 -->|MySQL Protocol| RDS
+    Task2 -->|MySQL Protocol| RDS
+```
+
+<Callout type="info" title="Vì sao lựa chọn ECS Fargate thay vì EC2 truyền thống?">
+  **AWS Fargate** giúp bạn vận hành container theo dạng Serverless: không cần quản lý EC2 OS, không lo vá lỗi kernel hay cấu hình Auto Scaling Group cho cluster node. Bạn chỉ trả chi phí theo đúng lượng CPU và RAM mà Task tiêu thụ.
+</Callout>
+
+---
+
+## Khởi tạo Amazon RDS MySQL Database
+
+Để đảm bảo khả năng chịu lỗi và an toàn dữ liệu, cơ sở dữ liệu sẽ được triển khai dạng Multi-Subnet và không cấp địa chỉ IP Public.
+
+### Quy hoạch DB Subnet Group & Parameter Group
+
+Trước khi tạo RDS Instance, ta cần nhóm các Private Subnet và cấu hình bộ mã hóa **utf8mb4** hỗ trợ hiển thị tiếng Việt và emoji cho ứng dụng.
 
 <Steps>
 
 <Step>
-### Bước 1: Khởi tạo Amazon RDS Instance
-Tạo csdl trong Private Subnet để đảm bảo an toàn dữ liệu.
+### Bước 1: Tạo DB Subnet Group
+1. Truy cập **Amazon RDS Console** $\rightarrow$ chọn **Subnet groups** $\rightarrow$ bấm **Create DB Subnet Group**.
+2. Đặt tên `neonfoodmap-db-subnet-group`.
+3. Chọn VPC `fcj-workshop-vpc`.
+4. Tại mục **Availability Zones**, chọn 2 AZs (`us-east-1a`, `us-east-1b`).
+5. Chọn 2 **Private Database Subnets** đã tạo ở Part 1 $\rightarrow$ Bấm **Create**.
 </Step>
 
 <Step>
-### Bước 2: Triển khai EC2 Instances
-Khởi tạo EC2 Instances chạy ứng dụng web.
+### Bước 2: Tạo Custom Parameter Group cho MySQL 8.0
+1. Vào mục **Parameter groups** $\rightarrow$ bấm **Create parameter group**.
+2. Chọn **Parameter group family**: `mysql8.0`.
+3. Đặt tên **Group name**: `neonfoodmap-mysql80-params`.
+4. Sau khi tạo, chọn Parameter Group này $\rightarrow$ bấm **Edit**.
+5. Cập nhật 2 tham số quan trọng:
+   - `character_set_server` = `utf8mb4`
+   - `collation_server` = `utf8mb4_unicode_ci`
+6. Bấm **Save changes**.
+</Step>
+
+</Steps>
+
+### Triển khai RDS Instance
+
+<Tabs items={['AWS Console', 'AWS CLI']}>
+
+<Tab value="AWS Console">
+
+1. Vào **RDS Console** $\rightarrow$ **Databases** $\rightarrow$ bấm **Create database**.
+2. Chọn **Standard create** $\rightarrow$ **MySQL** (Engine version 8.0.x).
+3. **Templates:** Chọn *Free tier* hoặc *Dev/Test*.
+4. **Settings:**
+   - DB instance identifier: `neonfoodmap-mysql-db`
+   - Master username: `admin`
+   - Master password: Đặt mật khẩu mạnh (VD: `SafeP@ssw0rd2026!`)
+5. **Instance configuration:** `db.t3.micro` (0.5 vCPU, 1 GB RAM).
+6. **Storage:** `gp3`, Allocated storage `20 GiB`, Enable storage autoscaling (Max `100 GiB`).
+7. **Connectivity:**
+   - VPC: `fcj-workshop-vpc`
+   - DB subnet group: `neonfoodmap-db-subnet-group`
+   - Public access: **No** (Bắt buộc)
+   - Existing VPC security groups: Chọn `rds-mysql-sg`
+8. **Additional configuration:**
+   - Initial database name: `buocchancoi_db`
+   - DB parameter group: `neonfoodmap-mysql80-params`
+9. Bấm **Create database**.
+
+</Tab>
+
+<Tab value="AWS CLI">
+
+```bash
+# 1. Tạo DB Subnet Group
+aws rds create-db-subnet-group \
+  --db-subnet-group-name neonfoodmap-db-subnet-group \
+  --db-subnet-group-description "Subnet group for RDS MySQL" \
+  --subnet-ids "$PRIV_SUB_1" "$PRIV_SUB_2"
+
+# 2. Khởi tạo RDS Instance
+aws rds create-db-instance \
+  --db-instance-identifier neonfoodmap-mysql-db \
+  --db-instance-class db.t3.micro \
+  --engine mysql \
+  --engine-version 8.0 \
+  --allocated-storage 20 \
+  --storage-type gp3 \
+  --master-username admin \
+  --master-user-password "SafeP@ssw0rd2026!" \
+  --db-name buocchancoi_db \
+  --vpc-security-group-ids "$RDS_SG_ID" \
+  --db-subnet-group-name neonfoodmap-db-subnet-group \
+  --no-publicly-accessible \
+  --backup-retention-period 7
+```
+
+</Tab>
+
+</Tabs>
+
+<Callout type="warn" title="Gotcha thực tế về kết nối RDS">
+  RDS Instance cần mất từ 5-10 phút để hoàn tất khởi tạo. Hãy lưu lại **Endpoint DNS** (ví dụ: `neonfoodmap-mysql-db.xxxxxx.us-east-1.rds.amazonaws.com`) xuất hiện trong phần *Connectivity & security*. Endpoint này sẽ dùng khai báo biến môi trường `DB_HOST` cho ECS Task.
+</Callout>
+
+---
+
+## Tạo Application Load Balancer (ALB) & Target Group
+
+Application Load Balancer đóng vai trò tiếp nhận traffic HTTP/HTTPS từ Internet, thực hiện Health Check và phân phối tải đều tới các ECS Tasks bên dưới.
+
+### Tạo Target Group cho Backend Django
+
+<Steps>
+
+<Step>
+### Bước 1: Khai báo Target Group
+1. Mở **EC2 Console** $\rightarrow$ **Target Groups** $\rightarrow$ bấm **Create target group**.
+2. **Target type:** Chọn **IP addresses** (bắt buộc đối với AWS Fargate networking mode `awsvpc`).
+3. **Target group name:** `TG-NeonFoodMap-BE`.
+4. **Protocol / Port:** `HTTP` / `8000` (Port mà Django Gunicorn container đang lắng nghe).
+5. **VPC:** Chọn `fcj-workshop-vpc`.
 </Step>
 
 <Step>
-### Bước 3: Cấu hình Application Load Balancer (ALB)
-Tạo Target Group và ALB để phân phối lưu lượng truy cập.
+### Bước 2: Cấu hình Health Check
+1. **Health check protocol:** `HTTP`.
+2. **Health check path:** `/api/health` (đường dẫn kiểm tra trạng thái API).
+3. **Advanced settings:**
+   - Healthy threshold: `2`
+   - Unhealthy threshold: `3`
+   - Timeout: `5 seconds`
+   - Interval: `30 seconds`
+   - Success codes: `200`
+4. Bấm **Next** $\rightarrow$ Bỏ qua bước đăng ký IP thủ công (ECS Service sẽ tự động đăng ký target IP khi khởi chạy task) $\rightarrow$ Bấm **Create target group**.
+</Step>
+
+</Steps>
+
+### Tạo Application Load Balancer (ALB)
+
+<Tabs items={['AWS Console', 'AWS CLI']}>
+
+<Tab value="AWS Console">
+
+1. Mở **EC2 Console** $\rightarrow$ **Load Balancers** $\rightarrow$ bấm **Create load balancer**.
+2. Select **Application Load Balancer** $\rightarrow$ Bấm **Create**.
+3. **Basic configuration:** Name `ALB-NeonFoodMap`, Scheme `Internet-facing`, IP address type `IPv4`.
+4. **Network mapping:** VPC `fcj-workshop-vpc`, Mapped subnets: Chọn `us-east-1a` (`fcj-public-subnet-1`) và `us-east-1b` (`fcj-public-subnet-2`).
+5. **Security groups:** Chọn `alb-sg`.
+6. **Listeners and routing:** Protocol `HTTP`, Port `80`, Default action: Forward to `TG-NeonFoodMap-BE`.
+7. Bấm **Create load balancer**.
+
+</Tab>
+
+<Tab value="AWS CLI">
+
+```bash
+# 1. Tạo Target Group type IP
+TG_ARN=$(aws elbv2 create-target-group \
+  --name TG-NeonFoodMap-BE \
+  --protocol HTTP --port 8000 \
+  --target-type ip \
+  --vpc-id $VPC_ID \
+  --health-check-protocol HTTP \
+  --health-check-path /api/health \
+  --query 'TargetGroups[0].TargetGroupArn' --output text)
+
+# 2. Tạo ALB đặt tại 2 Public Subnets
+ALB_ARN=$(aws elbv2 create-load-balancer \
+  --name ALB-NeonFoodMap \
+  --subnets $PUB_SUB_1 $PUB_SUB_2 \
+  --security-groups $ALB_SG_ID \
+  --scheme internet-facing \
+  --type application \
+  --query 'LoadBalancers[0].LoadBalancerArn' --output text)
+
+# 3. Tạo HTTP Listener Port 80 forward sang Target Group
+aws elbv2 create-listener \
+  --load-balancer-arn $ALB_ARN \
+  --protocol HTTP --port 80 \
+  --default-actions Type=forward,TargetGroupArn=$TG_ARN
+```
+
+</Tab>
+
+</Tabs>
+
+---
+
+## Triển khai Backend Service lên Amazon ECS Fargate
+
+Tầng ứng dụng chạy Django API sẽ được đóng gói thành Docker Image đẩy lên **Amazon ECR**, sau đó định nghĩa **ECS Task Definition** để khởi chạy trên **AWS Fargate**.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant ECR as Amazon ECR
+    participant ECS as ECS Fargate Service
+    participant CW as CloudWatch Logs
+    participant SM as Secrets Manager
+
+    ECS->>ECR: 1. Pull Docker Image (latest)
+    ECS->>SM: 2. Inject DB_PASSWORD & Credentials
+    ECS->>CW: 3. Stream Container Stdout/Stderr Logs
+    ECS->>ALB: 4. Register Task IP to Target Group
+```
+
+### Khởi tạo ECS Task Definition
+
+Tạo file định nghĩa `task-definition.json` thiết lập tài nguyên tối thiểu 0.25 vCPU và 512 MiB RAM:
+
+```json
+{
+  "family": "neonfoodmap-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::123456789012:role/NeonFoodmap-TaskExecution-Role",
+  "taskRoleArn": "arn:aws:iam::123456789012:role/NeonFoodmap-ECS-Backend-Role",
+  "containerDefinitions": [
+    {
+      "name": "backend",
+      "image": "123456789012.dkr.ecr.us-east-1.amazonaws.com/neonfoodmap-backend:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        { "name": "DJANGO_SETTINGS_MODULE", "value": "config.settings" },
+        { "name": "DEBUG", "value": "False" },
+        { "name": "AWS_REGION", "value": "us-east-1" }
+      ],
+      "secrets": [
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:123456789012:secret:neonfoodmap/rds-credentials-XxX:DB_PASSWORD::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/neonfoodmap-backend",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Khởi tạo ECS Cluster & Service
+
+<Steps>
+
+<Step>
+### Bước 1: Tạo ECS Cluster
+```bash
+aws ecs create-cluster --cluster-name neonfoodmap-cluster
+```
+</Step>
+
+<Step>
+### Bước 2: Tạo ECS Service gắn kết với ALB
+Khởi tạo Service chạy 2 Task Fargate rải đều ở 2 Private Subnets để sẵn sàng cho tính năng High Availability:
+
+```bash
+aws ecs create-service \
+  --cluster neonfoodmap-cluster \
+  --service-name neonfoodmap-backend-service \
+  --task-definition neonfoodmap-backend:1 \
+  --desired-count 2 \
+  --launch-type FARGATE \
+  --network-configuration "awsvpcConfiguration={subnets=[$PRIV_SUB_1,$PRIV_SUB_2],securityGroups=[$ECS_SG_ID],assignPublicIp=DISABLED}" \
+  --load-balancers "targetGroupArn=$TG_ARN,containerName=backend,containerPort=8000"
+```
 </Step>
 
 </Steps>
 
 ---
 
-## ➡️ Bài tiếp theo
-Đến với [Part 3: Security & IAM Governance](./03-security-iam).
+## Kiểm tra & Xác nhận Cấu hình (Verification)
+
+Sau khi ECS Service chuyển sang trạng thái `ACTIVE` và các Tasks bắt đầu chạy, bạn hãy xác nhận quá trình hoạt động bằng các bước sau:
+
+1. **Kiểm tra Target Group Health:**  
+   Vào **EC2 Console** $\rightarrow$ **Target Groups** $\rightarrow$ `TG-NeonFoodMap-BE`. Đảm bảo cả 2 IP Target đều báo trạng thái **Healthy**.
+2. **Test API qua ALB DNS:**  
+   Lấy DNS Name của ALB và gửi HTTP Request kiểm tra endpoint:
+   ```bash
+   ALB_DNS=$(aws elbv2 describe-load-balancers --names ALB-NeonFoodMap --query 'LoadBalancers[0].DNSName' --output text)
+   curl -i http://$ALB_DNS/api/health
+   ```
+   *Kết quả mong đợi:* HTTP Code `200 OK` kèm response JSON từ Django backend.
+
+---
+
+## Bài học Cốt lõi (Takeaways)
+
+<Cards>
+  <Card icon={<Cpu className="text-blue-500" />} title="Target Type IP cho Fargate">
+    Khác với EC2 launch type (dùng Target type `instance`), Fargate dùng chế độ mạng `awsvpc` cấp cho mỗi Task 1 ENI riêng. Bắt buộc chọn Target type là **IP**.
+  </Card>
+  <Card icon={<Database className="text-green-500" />} title="Storage Autoscaling cho Database">
+    Khai báo cấu hình `storage autoscaling` giúp RDS chủ động tăng dung lượng từ 20GB lên tối đa 100GB khi đĩa sắp đầy mà không gián đoạn dịch vụ.
+  </Card>
+  <Card icon={<Shield className="text-purple-500" />} title="Private Subnets Deployment">
+    Giữ ECS Tasks và RDS hoàn toàn trong Private Subnets, đồng thời tắt `assignPublicIp` cho Task để loại bỏ hoàn toàn bề mặt tấn công từ phía Internet.
+  </Card>
+</Cards>
+
+---
+
+## Bước Tiếp Theo
+
+Tiếp tục chuyển sang [Part 3: Triển khai Frontend SPA với Amazon S3 & CloudFront CDN](./03-frontend-cdn) để cấu hình S3 private buckets, CloudFront CDN và Origin Access Control (OAC)!

@@ -6,6 +6,8 @@ description: "Hướng dẫn từng bước thiết lập Virtual Private Cloud 
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Network, ShieldCheck, Globe, Route, Server, Layers } from 'lucide-react';
 
 # Part 1: Khởi tạo VPC & Hạ tầng Mạng Chuẩn Production
 
@@ -15,14 +17,24 @@ Trong phần đầu tiên của series **FCJ Workshop**, chúng ta sẽ tự tay
 
 ---
 
-## 🎯 Mục tiêu Kiến trúc
+## Mục tiêu Kiến trúc
 
 Sau bài lab này, bạn sẽ nắm vững và triển khai được:
-- **1 Custom VPC** dải IP `10.0.0.0/16` (65,536 địa chỉ IP).
-- **2 Public Subnets** rải đều ở 2 AZs (`us-east-1a`, `us-east-1b`) dành cho Application Load Balancer và Bastion Host.
-- **2 Private Subnets** rải đều ở 2 AZs dành cho Web Application Server và Database Cluster (RDS).
-- **1 Internet Gateway (IGW)** đóng vai trò cửa ngõ giao tiếp Internet hai chiều.
-- **Bảng định tuyến (Route Tables)** được phân tách nghiêm ngặt giữa Public & Private Zone.
+
+<Cards>
+  <Card icon={<Network className="text-blue-500" />} title="Custom VPC (10.0.0.0/16)">
+    Dải IP CIDR `10.0.0.0/16` cung cấp 65,536 địa chỉ IP, kích hoạt DNS Hostnames & DNS Support.
+  </Card>
+  <Card icon={<Globe className="text-green-500" />} title="Multi-AZ Public Subnets">
+    2 Public Subnets rải đều ở 2 AZs (`us-east-1a`, `us-east-1b`) dành cho Application Load Balancer.
+  </Card>
+  <Card icon={<ShieldCheck className="text-purple-500" />} title="Multi-AZ Private Subnets">
+    2 Private Subnets rải đều ở 2 AZs dành cho Backend App Tasks và Database Cluster (RDS).
+  </Card>
+  <Card icon={<Route className="text-amber-500" />} title="Internet Gateway & Route Tables">
+    Internet Gateway (IGW) cửa ngõ Internet và phân tách nghiêm ngặt Route Tables Public/Private.
+  </Card>
+</Cards>
 
 ```mermaid
 graph TD
@@ -58,7 +70,7 @@ graph TD
 
 ---
 
-## 📐 Bảng Quy hoạch Dải Mạng (IP Planning)
+## Bảng Quy hoạch Dải Mạng (IP Planning)
 
 Việc chọn dải CIDR phù hợp giúp hệ thống tránh bị đụng độ dải IP khi thực hiện Peering VPC hoặc kết nối VPN về On-premise datacenter sau này.
 
@@ -76,7 +88,7 @@ Việc chọn dải CIDR phù hợp giúp hệ thống tránh bị đụng độ
 
 ---
 
-## 🛠️ Hướng dẫn Triển khai Từng bước
+## Hướng dẫn Triển khai Từng bước
 
 Bạn có thể lựa chọn thao tác qua **AWS Management Console (Giao diện web)** hoặc dùng **AWS CLI (Dòng lệnh)** bên dưới.
 
@@ -96,6 +108,7 @@ Bạn có thể lựa chọn thao tác qua **AWS Management Console (Giao diện
    - **IPv6 CIDR block:** No IPv6 CIDR block
    - **Tenancy:** Default
 4. Bấm **Create VPC**.
+5. Chọn VPC vừa tạo $\rightarrow$ **Actions** $\rightarrow$ **Edit VPC settings** $\rightarrow$ Tích chọn **Enable DNS hostnames** và **Enable DNS resolution** $\rightarrow$ Bấm **Save**.
 </Step>
 
 <Step>
@@ -157,10 +170,13 @@ Chúng ta cần tạo 2 Bảng định tuyến độc lập:
 Nếu bạn yêu thích dòng lệnh, chỉ cần thực thi tập lệnh Bash sau để hoàn thành toàn bộ công việc trên trong **10 giây**:
 
 ```bash
-# 1. Khởi tạo VPC
+# 1. Khởi tạo VPC & Bật DNS Hostnames
 VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 \
   --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=fcj-workshop-vpc}]' \
   --query 'Vpc.VpcId' --output text)
+
+aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-hostnames '{"Value": true}'
+aws ec2 modify-vpc-attribute --vpc-id $VPC_ID --enable-dns-support '{"Value": true}'
 
 echo "VPC Created: $VPC_ID"
 
@@ -189,16 +205,23 @@ IGW_ID=$(aws ec2 create-internet-gateway \
 aws ec2 attach-internet-gateway --vpc-id $VPC_ID --internet-gateway-id $IGW_ID
 
 # 4. Tạo Route Tables & Định tuyến
+# Public Route Table
 PUB_RT=$(aws ec2 create-route-table --vpc-id $VPC_ID \
   --tag-specifications 'ResourceType=route-table,Tags=[{Key=Name,Value=fcj-public-rt}]' \
   --query 'RouteTable.RouteTableId' --output text)
 
-# Thêm Default Route trỏ ra IGW
 aws ec2 create-route --route-table-id $PUB_RT --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID
 
-# Associate Subnets vào Route Tables
 aws ec2 associate-route-table --subnet-id $PUB_SUB_1 --route-table-id $PUB_RT
 aws ec2 associate-route-table --subnet-id $PUB_SUB_2 --route-table-id $PUB_RT
+
+# Private Route Table
+PRIV_RT=$(aws ec2 create-route-table --vpc-id $VPC_ID \
+  --tag-specifications 'ResourceType=route-table,Tags=[{Key=Name,Value=fcj-private-rt}]' \
+  --query 'RouteTable.RouteTableId' --output text)
+
+aws ec2 associate-route-table --subnet-id $PRIV_SUB_1 --route-table-id $PRIV_RT
+aws ec2 associate-route-table --subnet-id $PRIV_SUB_2 --route-table-id $PRIV_RT
 ```
 
 </Tab>
@@ -208,6 +231,7 @@ aws ec2 associate-route-table --subnet-id $PUB_SUB_2 --route-table-id $PUB_RT
 Dành cho bạn nào muốn áp dụng chuẩn GitOps / IaC:
 
 ```hcl
+# 1. VPC & IGW
 resource "aws_vpc" "main" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -226,6 +250,7 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
+# 2. Subnets
 resource "aws_subnet" "public_1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
@@ -235,6 +260,32 @@ resource "aws_subnet" "public_1" {
   tags = { Name = "fcj-public-subnet-1" }
 }
 
+resource "aws_subnet" "public_2" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "us-east-1b"
+  map_public_ip_on_launch = true
+
+  tags = { Name = "fcj-public-subnet-2" }
+}
+
+resource "aws_subnet" "private_1" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "us-east-1a"
+
+  tags = { Name = "fcj-private-subnet-1" }
+}
+
+resource "aws_subnet" "private_2" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.4.0/24"
+  availability_zone = "us-east-1b"
+
+  tags = { Name = "fcj-private-subnet-2" }
+}
+
+# 3. Route Tables & Associations
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -246,9 +297,30 @@ resource "aws_route_table" "public" {
   tags = { Name = "fcj-public-rt" }
 }
 
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  tags = { Name = "fcj-private-rt" }
+}
+
 resource "aws_route_table_association" "public_1" {
   subnet_id      = aws_subnet.public_1.id
   route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_2" {
+  subnet_id      = aws_subnet.public_2.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "private_1" {
+  subnet_id      = aws_subnet.private_1.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_2" {
+  subnet_id      = aws_subnet.private_2.id
+  route_table_id = aws_route_table.private.id
 }
 ```
 
@@ -258,32 +330,38 @@ resource "aws_route_table_association" "public_1" {
 
 ---
 
-## 🔍 Kiểm tra & Xác nhận Cấu hình (Verification)
+## Kiểm tra & Xác nhận Cấu hình (Verification)
 
-Để chắc chắn hạ tầng mạng của bạn đã hoạt động đúng như thiết kế, hãy chạy câu lệnh kiểm tra trạng thái Route Table thông qua AWS CLI:
+Để chắc chắn hạ tầng mạng của bạn đã hoạt động đúng như thiết kế, hãy chạy các câu lệnh kiểm tra trạng thái Route Table thông qua AWS CLI:
 
 ```bash
-# Kiểm tra Route Table của Public Subnet xem đã có route 0.0.0.0/0 trỏ tới IGW chưa
+# 1. Kiểm tra Route Table của Public Subnet xem đã có route 0.0.0.0/0 trỏ tới IGW chưa
 aws ec2 describe-route-tables \
   --filters "Name=tag:Name,Values=fcj-public-rt" \
   --query 'RouteTables[*].Routes[?DestinationCidrBlock==`0.0.0.0/0`]'
+
+# 2. Kiểm tra các Subnet đã liên kết đúng Route Tables chưa
+aws ec2 describe-route-tables \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query 'RouteTables[*].{TableID:RouteTableId, Tags:Tags, Associations:Associations[*].SubnetId}'
 ```
 
 **Kết quả mong đợi:**  
-Đầu ra JSON hiển thị chi tiết `GatewayId` bắt đầu bằng `igw-xxxxxxxx` với `State: active`.
+Đầu ra JSON hiển thị chi tiết `GatewayId` bắt đầu bằng `igw-xxxxxxxx` với `State: active`, đồng thời 2 public subnets gắn liền với `fcj-public-rt` và 2 private subnets gắn liền với `fcj-private-rt`.
 
 ---
 
-## 💡 Bài học Cốt lõi (Takeaways)
+## Bài học Cốt lõi (Takeaways)
 
 1. **Security Isolation:** Luôn giữ tài nguyên quan trọng (Database, Backend Service) trong **Private Subnet** không có route trực tiếp ra Internet.
 2. **High Availability:** Triển khai hạ tầng qua tối thiểu 2 Availability Zones (`us-east-1a` & `us-east-1b`) nhằm sẵn sàng cho các tình huống sự cố tại một Datacenter của AWS.
 3. **Explicit Subnet Association:** Nên chủ động Associate từng Subnet vào Route Table cụ thể thay vì phụ thuộc hoàn toàn vào Main Route Table mặc định của VPC.
+4. **DNS Settings Requirement:** Bật `enableDnsHostnames` và `enableDnsSupport` cho VPC để đảm bảo tính năng phân giải tên miền nội bộ (ví dụ: RDS DNS endpoint) hoạt động chính xác.
 
 ---
 
-## ➡️ Bước Tiếp Theo
+## Bước Tiếp Theo
 
 Chúc mừng bạn! Bạn đã hoàn thành việc xây dựng hạ tầng mạng vững chắc.
 
-Hãy chuyển sang [Part 2: Compute & Database Layer](./02-compute-rds) để bắt đầu khởi tạo máy chủ EC2 và cụm cơ sở dữ liệu Amazon RDS!
+Hãy chuyển sang [Part 2: Compute & Database Layer](./02-compute-rds) để bắt đầu khởi tạo máy chủ EC2/ECS và cụm cơ sở dữ liệu Amazon RDS!

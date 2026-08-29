@@ -1,97 +1,125 @@
 ---
-title: "Overview: FCJ Workshop Series"
-description: "Tổng quan về chuỗi bài thực hành triển khai ứng dụng Web chuẩn kiến trúc Cloud Native trên AWS."
+title: "Overview: FCJ Workshop Season 1"
+description: "Tổng quan về chuỗi bài thực hành triển khai ứng dụng NeonFoodMap chuẩn kiến trúc Cloud Native trên AWS."
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
 import { Callout } from 'fumadocs-ui/components/callout';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Server, Network, ShieldCheck, DollarSign, Layers, Globe, Activity } from 'lucide-react';
 
-# FCJ Workshop Series: Triển khai Ứng dụng Web Chuẩn AWS
+# FCJ Workshop: Triển khai Ứng dụng Web Cloud-Native NeonFoodMap lên AWS
 
-Chào mừng bạn đến với chuỗi bài lab thực hành chuẩn hóa dựa trên **FCJ Workshop Template** ([camdao/fcj-workshop-template](https://github.com/camdao/fcj-workshop-template)). Chuỗi bài viết này được biên soạn nhằm hướng dẫn bạn thiết kế, xây dựng và tối ưu hạ tầng ứng dụng điện toán đám mây theo tiêu chuẩn **AWS Well-Architected Framework**.
-
----
-
-## 🎯 Bạn sẽ Học được gì từ Series này?
-
-- **Hạ tầng Mạng (Networking):** Xây dựng VPC an toàn, phân tách Public/Private Subnets rõ ràng.
-- **Tầng Ứng dụng (Compute):** Triển khai EC2 Instances và Application Load Balancer (ALB) hỗ trợ mở rộng.
-- **Tầng Dữ liệu (Database):** Cấu hình Amazon RDS an toàn trong vùng mạng nội bộ.
-- **Bảo mật & Quản trị (Security & IAM):** Kiểm soát quyền hạn tối thiểu (Least Privilege) với IAM Roles và Security Groups.
-- **Tối ưu Chi phí (FinOps & Cleanup):** Hướng dẫn dọn dẹp hạ tầng an toàn, không phát sinh chi phí AWS ngoài ý muốn.
+Chuỗi bài lab thực hành từng bước giúp bạn thiết kế, xây dựng, triển khai, vận hành và tối ưu hạ tầng điện toán đám mây theo tiêu chuẩn **AWS Well-Architected Framework**.
 
 ---
 
-## 🏗️ Sơ đồ Kiến trúc Tổng quan (System Architecture)
+## Mục tiêu bài học
 
-Dưới đây là mô hình hạ tầng hoàn chỉnh mà bạn sẽ tự tay dựng lên sau khi đi hết chuỗi bài thực hành:
-
-```mermaid
-graph TD
-    User([Khách hàng / Internet]) --> ALB[Application Load Balancer]
-    
-    subgraph VPC ["AWS VPC (10.0.0.0/16)"]
-        subgraph PublicZone ["Public Subnets (Web Layer - Multi AZ)"]
-            ALB
-            IGW[Internet Gateway]
-        end
-        
-        subgraph PrivateZone ["Private Subnets (App & DB Layer - Multi AZ)"]
-            EC2_AZ1[EC2 App Instance AZ-1]
-            EC2_AZ2[EC2 App Instance AZ-2]
-            RDS[(Amazon RDS Cluster)]
-        end
-    end
-
-    User <--> IGW <--> ALB
-    ALB --> EC2_AZ1
-    ALB --> EC2_AZ2
-    EC2_AZ1 --> RDS
-    EC2_AZ2 --> RDS
-```
+<Cards>
+  <Card icon={<Network className="text-blue-500" />} title="Part 1: VPC & Hạ tầng Mạng">
+    Xây dựng Custom VPC, phân tách Public/Private Subnets Multi-AZ an toàn.
+  </Card>
+  <Card icon={<Server className="text-green-500" />} title="Part 2: Compute & Database">
+    Triển khai ECS Fargate Tasks, Application Load Balancer (ALB) và Amazon RDS MySQL.
+  </Card>
+  <Card icon={<Globe className="text-cyan-500" />} title="Part 3: Frontend & CloudFront CDN">
+    Cấu hình S3 Private Buckets, CloudFront CDN và Origin Access Control (OAC).
+  </Card>
+  <Card icon={<ShieldCheck className="text-purple-500" />} title="Part 4: Security, IAM & CI/CD">
+    Kiểm soát Security Group Chaining, phân định Execution vs Task Role và GitHub Actions OIDC.
+  </Card>
+  <Card icon={<Activity className="text-rose-500" />} title="Part 5: Neon Operations">
+    Thiết lập ECS Auto Scaling, CloudWatch Operational Dashboards, Alarms & Log Insights.
+  </Card>
+  <Card icon={<DollarSign className="text-amber-500" />} title="Part 6: Cleanup & FinOps">
+    Hướng dẫn dọn dẹp hạ tầng an toàn theo thứ tự dependency và quản lý AWS Budgets.
+  </Card>
+</Cards>
 
 ---
 
-## 📋 Điều kiện Tiên quyết (Prerequisites)
+## Sơ đồ Kiến trúc Tổng quan
 
-Để thực hành thuận lợi nhất, bạn nên chuẩn bị trước:
-1. **Tài khoản AWS:** Tài khoản đang hoạt động (khuyên dùng gói AWS Free Tier).
-2. **AWS CLI & Git:** Đã cài đặt trên máy cá nhân và cấu hình `aws configure`.
-3. **Kiến thức cơ bản:** Đã hiểu sơ bộ về Linux command line và khái niệm IP/CIDR.
+Dưới đây là mô hình hạ tầng hoàn chỉnh bạn sẽ tự tay dựng lên sau khi hoàn thành chuỗi bài thực hành:
 
-<Callout type="warn">
-  **Lưu ý quan trọng về chi phí:** Hầu hết các tài nguyên trong workshop đều nằm trong **AWS Free Tier**. Tuy nhiên, bạn bắt buộc phải thực hiện bước **Cleanup ở Part 4** sau khi hoàn thành bài lab để tránh bị tính phí duy trì.
+![Sơ đồ kiến trúc](/images/diagram1.png)
+
+---
+
+## Điều kiện Tiên quyết
+
+Để thực hành bài lab hiệu quả nhất, hãy chuẩn bị trước các tài nguyên sau:
+
+<Steps>
+  <Step>
+    ### Tài khoản AWS
+    Sử dụng tài khoản AWS đang hoạt động (khuyên dùng gói **AWS Free Tier**).
+  </Step>
+  <Step>
+    ### Công cụ CLI & Git
+    Cài đặt **AWS CLI v2**, **Git** trên máy cá nhân và đã cấu hình thành công:
+    ```bash
+    aws configure
+    ```
+  </Step>
+  <Step>
+    ### Kiến thức nền tảng
+    Hiểu sơ bộ về câu lệnh Linux cơ bản, khái niệm Docker container và chia dải mạng IP/CIDR.
+  </Step>
+</Steps>
+
+<Callout type="warn" title="Lưu ý quan trọng về chi phí">
+  Hầu hết các tài nguyên trong workshop đều nằm trong **AWS Free Tier**. Tuy nhiên, bạn bắt buộc phải thực hiện bước **Cleanup ở Part 6** ngay sau khi hoàn thành bài lab để tránh bị tính phí duy trì.
 </Callout>
 
 ---
 
-## 📚 Danh sách các Bài thực hành (Lab Modules)
+## Danh sách các Bài thực hành
 
 Hãy chọn bài thực hành bạn muốn bắt đầu:
 
 <Cards>
   <Card 
+    icon={<Network />}
     title="Part 1: VPC & Hạ tầng Mạng" 
-    href="./work-shop-1/01-vpc-networking"
+    href="./01-vpc-networking"
   >
     Khởi tạo VPC, Public/Private Subnets, Internet Gateway và Route Tables.
   </Card>
   <Card 
-    title="Part 2: Compute & Database Layer" 
-    href="./work-shop-1/02-compute-rds"
+    icon={<Server />}
+    title="Part 2: Compute, Container & Database Layer" 
+    href="./02-compute-rds"
   >
-    Triển khai EC2 Instances, Application Load Balancer (ALB) và Amazon RDS.
+    Triển khai ECS Fargate Tasks, Application Load Balancer (ALB) và Amazon RDS MySQL.
   </Card>
   <Card 
-    title="Part 3: Security & IAM Governance" 
-    href="./work-shop-1/03-security-iam"
+    icon={<Globe />}
+    title="Part 3: Frontend SPA với S3 & CloudFront CDN" 
+    href="./03-frontend-cdn"
   >
-    Cấu hình Security Groups, IAM Roles và quản lý mật khẩu qua Secrets Manager.
+    Khởi tạo 4 S3 Buckets private, Origin Access Control (OAC) và CloudFront Distribution.
   </Card>
   <Card 
-    title="Part 4: Cleanup & Lessons Learned" 
-    href="./work-shop-1/04-cleanup-summary"
+    icon={<ShieldCheck />}
+    title="Part 4: Security, IAM Roles & GitHub Actions CI/CD" 
+    href="./04-security-iam-cicd"
   >
-    Hướng dẫn tiêu hủy tài nguyên an toàn và tổng kết các kiến thức cốt lõi.
+    Cấu hình Security Group Chaining, Task Role vs Execution Role, OIDC và CI/CD Pipeline.
+  </Card>
+  <Card 
+    icon={<Activity />}
+    title="Part 5: Operations — Auto-Scaling & Monitoring" 
+    href="./05-operations-monitoring"
+  >
+    Cấu hình ECS Auto Scaling theo CPU, CloudWatch Dashboards, Alarms và Log Insights.
+  </Card>
+  <Card 
+    icon={<Layers />}
+    title="Part 6: Safe Cleanup, FinOps & Lessons Learned" 
+    href="./06-cleanup-summary"
+  >
+    Hướng dẫn tiêu hủy tài nguyên an toàn theo thứ tự, thiết lập AWS Budget và tổng kết bài học.
   </Card>
 </Cards>
