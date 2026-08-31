@@ -3,6 +3,9 @@
   "pages": [
     "---Introduction---",
     "camdao-introduce",
+    "---Redis---",
+    "redis/redis-lua",
+    
     "---Aws---",
     "fcj-workshop"
   ]
