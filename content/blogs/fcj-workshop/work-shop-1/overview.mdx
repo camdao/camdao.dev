@@ -43,63 +43,7 @@ Chuỗi bài lab thực hành từng bước giúp bạn thiết kế, xây dự
 
 Dưới đây là mô hình hạ tầng hoàn chỉnh bạn sẽ tự tay dựng lên sau khi hoàn thành chuỗi bài thực hành:
 
-```mermaid
-graph TB
-    %% Users & Frontend Layer
-    User[Users / Web Browsers] -->|HTTPS Requests| CF[Amazon CloudFront CDN]
-
-    subgraph S3Storage ["Frontend & Static Media (Amazon S3)"]
-        S3Front[("S3: neonfoodmap-frontend\nReact SPA Assets")]
-        S3Media[("S3: neonfoodmap-media\nPOI Images & Audio")]
-    end
-
-    CF -->|Origin Access Control| S3Front
-    CF -->|Origin Access Control| S3Media
-
-    %% Public Traffic & Entry Point
-    User -->|API Requests / Port 80, 443| ALB[Application Load Balancer]
-
-    %% VPC Region
-    subgraph VPC ["AWS VPC: fcj-workshop-vpc (10.0.0.0/16)"]
-
-        subgraph AZ_A ["Availability Zone: us-east-1a"]
-            PubSub1["Public Subnet 1\n(10.0.0.0/20)"]
-            NAT["NAT Gateway"]
-            PrivAppSub1["Private App Subnet 1\n(10.0.128.0/20)"]
-            ECSTask1["ECS Task 1 (Fargate)\nDjango API:8000"]
-            PrivDBSub1["Private DB Subnet 1\n(10.0.160.0/20)"]
-            RDS_Primary[("RDS MySQL Primary\n(Port 3306)")]
-
-            PubSub1 --- NAT
-            PrivAppSub1 --- ECSTask1
-            PrivDBSub1 --- RDS_Primary
-        end
-
-        subgraph AZ_B ["Availability Zone: us-east-1b"]
-            PubSub2["Public Subnet 2\n(10.0.16.0/20)"]
-            PrivAppSub2["Private App Subnet 2\n(10.0.144.0/20)"]
-            ECSTask2["ECS Task 2 (Fargate)\nDjango API:8000"]
-            PrivDBSub2["Private DB Subnet 2\n(10.0.176.0/20)"]
-            RDS_Standby[("RDS MySQL Standby\n(Port 3306)")]
-
-            PrivAppSub2 --- ECSTask2
-            PrivDBSub2 --- RDS_Standby
-        end
-
-        IGW[Internet Gateway]
-    end
-
-    %% Network Connections
-    ALB -->|Target Group| ECSTask1
-    ALB -->|Target Group| ECSTask2
-    ECSTask1 -->|SQL Queries| RDS_Primary
-    ECSTask2 -->|SQL Queries| RDS_Primary
-    ECSTask1 -.->|Outbound Traffic| NAT
-    ECSTask2 -.->|Outbound Traffic| NAT
-    NAT --> IGW
-    IGW -->|Internet| User
-    RDS_Primary -.-|Replication| RDS_Standby
-```
+![Architecture diagram](/images/work-shop-1/diagram1.png)
 
 ---
 
