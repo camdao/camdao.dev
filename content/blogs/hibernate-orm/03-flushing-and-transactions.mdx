@@ -8,9 +8,13 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { GitCommit, Database, RefreshCw, AlertTriangle, CheckCircle2, Clock, Layers } from 'lucide-react';
 
-Một trong những sai lầm phổ biến nhất của các lập trình viên khi làm việc với Hibernate là **đánh đồng việc gọi `flush()` với `commit()` Transaction**. 
+Một trong những sai lầm phổ biến khi làm việc với Hibernate là **đánh đồng `flush()` với `commit()`**.
 
-Hiểu đúng thời điểm Hibernate đẩy SQL xuống Database và cách quản lý vòng đời Transaction là điều kiện tiên quyết để xây dựng hệ thống có độ tin cậy và hiệu năng cao.
+Hiểu đúng **khi nào Hibernate đồng bộ thay đổi xuống Database (`flush`)** và **khi nào Transaction thực sự hoàn tất (`commit`)** là điều quan trọng để tránh hiểu sai về tính nhất quán dữ liệu và vòng đời Transaction.
+
+> **`flush()`** → đồng bộ các thay đổi từ Persistence Context xuống Database bằng SQL.
+>
+> **`commit()`** → hoàn tất Transaction và xác nhận các thay đổi của Transaction.
 
 ---
 
@@ -37,162 +41,403 @@ sequenceDiagram
     Note right of DB: Dữ liệu chính thức bền vững (Durable)
 ```
 
-| Tiêu chí | `flush()` | `commit()` |
-| :--- | :--- | :--- |
-| **Bản chất** | **Đồng bộ hóa bộ nhớ:** Đẩy các thay đổi đang chờ trong Persistence Context thành các câu lệnh SQL gửi tới Database. | **Xác nhận giao dịch:** Chốt toàn bộ các thay đổi vật lý của Database Transaction. |
-| **Phạm vi quản lý** | Do **Hibernate / JPA** quản lý. | Do **Database Transaction Manager** (JDBC / JTA) quản lý. |
-| **Dữ liệu có hiển thị với transaction khác?** | ❌ **Chưa** (theo chuẩn Read Committed / Repeatable Read). Transaction khác chỉ thấy row lock. | ✅ **Có** (Sau khi commit thành công). |
-| **Nếu xảy ra Rollback sau đó?** | Toàn bộ các câu lệnh SQL đã flush trước đó **sẽ bị Database Rollback hoàn toàn**. | Không thể rollback sau khi đã commit thành công. |
+### So sánh
+
+| Tiêu chí                     | `flush()`                                      | `commit()`                                            |
+| :--------------------------- | :--------------------------------------------- | :---------------------------------------------------- |
+| **Mục đích**                 | Đồng bộ Persistence Context → Database         | Hoàn tất Database Transaction                         |
+| **Thực hiện SQL?**           | Có thể thực thi `INSERT` / `UPDATE` / `DELETE` | Không phải mục đích chính của `commit()`              |
+| **Transaction kết thúc?**    | ❌ Không                                        | ✅ Có                                                  |
+| **Có thể rollback sau đó?**  | ✅ Có                                           | ❌ Không thể rollback Transaction đã commit thành công |
+| **Ai điều khiển?**           | JPA/Hibernate                                  | Transaction manager / Database                        |
+| **Có thể xảy ra nhiều lần?** | ✅ Có                                           | Thông thường một lần khi Transaction kết thúc         |
 
 ---
+## 2. Các chế độ Flush — `FlushModeType`
 
-## 2. Các chế độ Flush (FlushModeType) trong Hibernate
+Hibernate quản lý thời điểm tự động thực hiện `flush()` thông qua **Flush Mode**.
 
-Hibernate quản lý thời điểm tự động kích hoạt `flush()` thông qua `FlushMode`:
-
-```
-FlushMode Hierarchy & Cadence
-┌──────────────────────────────────────────────────────────────────┐
-│ ALWAYS   : Flush trước MỌI câu query (ít khi dùng)              │
-├──────────────────────────────────────────────────────────────────┤
-│ AUTO     : (Mặc định) Flush trước Query nếu query đụng dirty row │
-│            hoặc Flush khi transaction chuẩn bị Commit            │
-├──────────────────────────────────────────────────────────────────┤
-│ COMMIT   : Chỉ Flush khi Transaction chuẩn bị Commit             │
-├──────────────────────────────────────────────────────────────────┤
-│ MANUAL   : Ứng dụng phải tự gọi entityManager.flush() thủ công  │
-└──────────────────────────────────────────────────────────────────┘
+```text
+FlushMode
+│
+├── ALWAYS  → Flush trước mọi query
+│
+├── AUTO    → Flush khi cần thiết + trước commit
+│
+├── COMMIT  → Chủ yếu flush khi commit
+│
+└── MANUAL  → Application chủ động gọi flush()
 ```
 
-### 1. `FlushModeType.AUTO` (Mặc định & Khuyên dùng)
-Hibernate sẽ tự động kích hoạt `flush()` trong 2 trường hợp:
-1. **Trước khi kết thúc/commit Transaction:** Đảm bảo toàn bộ state được lưu trước khi đóng giao dịch.
-2. **Trước khi thực thi một Query (JPQL/HQL hoặc Native SQL):** Nếu câu query chuẩn bị đọc dữ liệu từ các bảng đang có Entity bị thay đổi (dirty) trong Persistence Context, Hibernate buộc phải flush trước để câu query đọc được dữ liệu mới nhất (**Read-Your-Own-Writes Consistency**).
+> Với JPA, `AUTO` là chế độ mặc định. Hibernate native còn có các `FlushMode` riêng như `ALWAYS`, `MANUAL`.
+
+### 1. `FlushModeType.AUTO`
+
+Đây là chế độ mặc định của JPA.
+
+Hibernate có thể tự động `flush()`:
+
+1. Khi transaction chuẩn bị `commit`.
+2. Trước một query nếu Hibernate xác định rằng các thay đổi pending trong Persistence Context có thể ảnh hưởng đến kết quả query.
+
+Ví dụ:
 
 ```java
 @Transactional
 public void autoFlushDemo() {
-    User user = entityManager.find(User.class, 1L);
-    user.setName("Bob"); // Đang dirty trong RAM
 
-    // Hibernate phát hiện câu HQL dưới đây đọc bảng 'users'
-    // -> Tự động flush() sinh câu UPDATE trước khi chạy SELECT!
-    List<User> list = entityManager.createQuery("SELECT u FROM User u WHERE u.name = 'Bob'", User.class)
-                                   .getResultList();
+    User user = entityManager.find(User.class, 1L);
+
+    user.setName("Bob");
+    // User đang dirty trong Persistence Context
+
+    List<User> users = entityManager.createQuery(
+        "SELECT u FROM User u WHERE u.name = 'Bob'",
+        User.class
+    ).getResultList();
+
+    // Hibernate có thể flush User trước khi chạy query
 }
 ```
 
-### 2. Trường hợp đặc biệt: `GenerationType.IDENTITY`
-<Callout type="error" title="Ngoại lệ phá vỡ cơ chế Flush Trì hoãn (Delayed Flush)">
-Khi bạn sử dụng `@GeneratedValue(strategy = GenerationType.IDENTITY)`, Hibernate **bắt buộc phải thực thi câu lệnh SQL INSERT ngay lập tức khi gọi `entityManager.persist(entity)`**, bất kể FlushMode là gì.
+Vì query đọc dữ liệu của `User`, Hibernate có thể cần đồng bộ thay đổi pending xuống Database trước khi thực hiện query.
 
-Lý do: Hibernate cần giá trị Primary Key được DB tự sinh để đăng ký Entity vào Persistence Context (Identity Map). Do đó, `IDENTITY` không thể tận dụng cơ chế batch insert trì hoãn.
-</Callout>
+Ngược lại:
+
+```java
+user.setName("Bob");
+
+entityManager.createQuery(
+    "SELECT p FROM Product p",
+    Product.class
+).getResultList();
+```
+
+Query chỉ đọc `Product`, nên Hibernate có thể không cần flush thay đổi của `User` trước query.
+
+### 2. `IDENTITY` và INSERT sớm
+
+Khi sử dụng:
+
+```java
+@GeneratedValue(strategy = GenerationType.IDENTITY)
+```
+
+Database tự sinh ID khi thực hiện `INSERT`.
+
+```text
+persist(entity)
+      ↓
+Database phải INSERT
+      ↓
+Database sinh ID
+      ↓
+Hibernate lấy generated ID
+```
+
+Do đó, với `IDENTITY`, Hibernate thường phải thực hiện `INSERT` sớm hơn thay vì luôn trì hoãn INSERT đến `flush()`.
+
+Điều này làm `IDENTITY` khó tận dụng cơ chế **delayed insert** và có thể hạn chế **JDBC batching** so với các chiến lược như `SEQUENCE`.
 
 ---
 
 ## 3. Quản lý Physical Transaction: JDBC vs JTA
 
-Hibernate cung cấp abstraction tầng cao thông qua `Transaction API` để trừu tượng hóa các cơ chế bên dưới:
+Hibernate cung cấp `Transaction API` để ứng dụng không cần thao tác trực tiếp với cơ chế transaction bên dưới.
 
-```mermaid
-graph TD
-    App[Hibernate Transaction API]
-    
-    subgraph ResourceLocal [JDBC Transaction]
-        App -->|Local Transaction| Conn[java.sql.Connection]
-        Conn --> DB1[(Single Database)]
-    end
-
-    subgraph Distributed [JTA Transaction]
-        App -->|Global Transaction| TM[Java Transaction API - JTA]
-        TM --> DB_A[(Database A)]
-        TM --> JMS[(Message Broker / RabbitMQ)]
-    end
+```text id="q7x2km"
+Application
+     ↓
+Hibernate Transaction API
+     ↓
+┌─────────────────────┬──────────────────────┐
+│ Resource-local      │ JTA                  │
+│ (JDBC Transaction)  │ (Global Transaction) │
+└─────────┬───────────┴──────────┬───────────┘
+          ↓                      ↓
+      Database              Transaction Manager
+                                 ↓
+                         ┌───────┴───────┐
+                         ↓               ↓
+                     Database A      Resource B
 ```
 
-- **Resource-local (JDBC):** Sử dụng `connection.setAutoCommit(false)`, `connection.commit()`. Phù hợp cho ứng dụng đơn cơ sở dữ liệu.
-- **JTA (Java Transaction API / XA):** Cho phép một transaction điều phối nhiều tài nguyên phân tán cùng lúc (Distributed Transactions - 2 Phase Commit).
+### 1. Resource-local / JDBC Transaction
+
+Transaction được quản lý bởi một JDBC `Connection`.
+
+```java id="6y8p2n"
+connection.setAutoCommit(false);
+
+try {
+    // SQL operations
+
+    connection.commit();
+} catch (Exception e) {
+    connection.rollback();
+}
+```
+
+Đặc điểm:
+
+* Thường phù hợp khi ứng dụng làm việc với **một database/resource**.
+* Transaction được quản lý thông qua JDBC connection.
+* Hibernate có thể sử dụng transaction này thông qua `EntityTransaction` hoặc cơ chế transaction của framework.
+
+```text id="9w3kfa"
+Application
+    ↓
+Hibernate
+    ↓
+JDBC Connection
+    ↓
+Database
+```
+
+### 2. JTA Transaction
+
+**JTA (Jakarta Transactions)** cung cấp API để quản lý transaction có thể trải rộng trên **nhiều transactional resources**.
+
+```text id="h6k2ps"
+Application
+      ↓
+JTA Transaction
+      ↓
+Transaction Manager
+      ├── Database A
+      ├── Database B
+      └── Resource khác
+```
+
+Transaction Manager chịu trách nhiệm điều phối transaction giữa các resource.
+
+Ví dụ:
+
+```text id="e2m7zr"
+Transaction
+   │
+   ├── Update Database A
+   │
+   └── Update Database B
+           ↓
+     cùng commit / rollback
+```
+
+### JTA và XA
+
+`JTA` là **API/transaction model**.
+
+`XA` là một cơ chế/protocol thường được sử dụng để hỗ trợ **distributed transaction** giữa các resource có khả năng tham gia XA.
+
+Một trường hợp điển hình là:
+
+```text id="c5n8vx"
+JTA Transaction Manager
+        ↓
+   XA resources
+     ├── DB A
+     └── DB B
+        ↓
+   Two-Phase Commit (2PC)
+```
+
+> Không nên đồng nhất `JTA = XA = 2PC`. JTA là abstraction/API; XA là một cơ chế chuẩn để resource tham gia distributed transaction; 2PC là một protocol commit thường được dùng trong mô hình này.
+
 
 ---
-
 ## 4. Transaction Patterns trong Ứng dụng Thực tế
 
-<Tabs items={['Session-per-request (Chuẩn)', 'Anti-pattern: Session-per-operation', 'Anti-pattern: Long Transactions']}>
+Trong ứng dụng Hibernate, cách xác định **phạm vi của Session/Persistence Context và Transaction** có ảnh hưởng trực tiếp đến hiệu năng, tính nhất quán dữ liệu và khả năng mở rộng của hệ thống.
 
-<Tab value="Session-per-request (Chuẩn)">
+<Tabs items={['Session-per-request (Phổ biến)', 'Anti-pattern: Session-per-operation', 'Anti-pattern: Long Transactions']}>
 
-Mỗi HTTP Request tương ứng với đúng **một Session duy nhất** và thực thi trong **một Transaction ngắn**:
+<Tab value="Session-per-request (Phổ biến)">
 
-```
+Trong mô hình **Session-per-request**, một HTTP Request được xử lý trong một phạm vi Persistence Context phù hợp và thường đi cùng một **transaction ngắn** cho business operation.
+
+```text
 Client Request
       │
       ▼
 ┌──────────────────────────────────────┐
-│ Open Session / EntityManager         │
-│ Begin Transaction                    │
-│   ├─ Business Logic Execution        │
-│   └─ Automatic Flush & Commit        │
-│ Close Session                        │
+│ Persistence Context / EntityManager  │
+│                                      │
+│   Begin Transaction                  │
+│          │                           │
+│          ├─ Business Logic           │
+│          │                           │
+│          └─ Flush                    │
+│                 │                    │
+│                 ▼                    │
+│              Commit                  │
+│                                      │
+│ Close / Release Resources            │
 └──────────────────────────────────────┘
       │
       ▼
-Client Response (200 OK)
+Client Response
 ```
 
-* **Spring Framework:** Sử dụng `@Transactional` trên tầng Service kết hợp với `OpenEntityManagerInViewFilter` hoặc đóng session ngay tại service boundary.
+Trong Spring, cách phổ biến là đặt `@Transactional` tại **Service Layer**:
+
+```java
+@Transactional
+public void updateUser(Long id) {
+
+    User user = userRepository.findById(id)
+        .orElseThrow();
+
+    user.setName("Bob");
+}
+```
+
+Khi method kết thúc thành công:
+
+```text
+Entity thay đổi
+      ↓
+Dirty Checking
+      ↓
+Flush
+      ↓
+SQL UPDATE
+      ↓
+Commit
+```
+
+> **Lưu ý:** Không nên hiểu cứng rằng `1 HTTP Request = 1 Transaction` hoặc `1 HTTP Request = 1 Session`. Phạm vi thực tế phụ thuộc vào cách ứng dụng cấu hình transaction và Persistence Context.
+
 </Tab>
 
 <Tab value="Anti-pattern: Session-per-operation">
 
-Mở và đóng Session / Transaction cho **từng câu lệnh DB riêng lẻ**:
+**Session-per-operation** là việc mở và đóng Session/Transaction cho từng thao tác DB riêng lẻ.
 
 ```java
-// ❌ SAI LẦM: Làm mất hoàn toàn lợi ích của First-Level Cache và Dirty Checking
-public void saveUser(User u) {
-    Session s = sf.openSession();
-    s.beginTransaction();
-    s.persist(u);
-    s.getTransaction().commit();
-    s.close();
+// ❌ Không nên
+
+public void saveUser(User user) {
+
+    Session session = sessionFactory.openSession();
+
+    session.beginTransaction();
+
+    session.persist(user);
+
+    session.getTransaction().commit();
+
+    session.close();
 }
 ```
-* **Hậu quả:** Tốn overhead mở/đóng kết nối liên tục, không đảm bảo tính toàn vẹn đa bước (Multi-step Atomicity).
+
+Nếu một business operation có nhiều thao tác:
+
+```text
+Operation 1
+→ Open Session
+→ Transaction
+→ Commit
+→ Close
+
+Operation 2
+→ Open Session
+→ Transaction
+→ Commit
+→ Close
+
+Operation 3
+→ Open Session
+→ Transaction
+→ Commit
+→ Close
+```
+
+### Vấn đề
+
+* Tăng overhead khi liên tục quản lý Session/Transaction/Connection.
+* Các thao tác không nằm trong cùng một transaction.
+* Không tận dụng được Persistence Context chung và First-Level Cache.
+* Khó đảm bảo **Multi-step Atomicity**.
+
+Ví dụ, nếu một nghiệp vụ cần thực hiện 3 bước:
+
+```text
+Create Order
+      ↓
+Create Order Items
+      ↓
+Update Inventory
+      ↓
+    COMMIT
+```
+
+thì thường nên đặt chúng trong **cùng một transaction** để có thể rollback toàn bộ khi xảy ra lỗi.
+
 </Tab>
 
 <Tab value="Anti-pattern: Long Transactions">
 
-Giữ Database Transaction mở trong suốt thời gian người dùng tương tác hoặc xử lý logic ngoài luồng:
+**Long Transaction** là transaction được giữ mở quá lâu, đặc biệt khi bên trong có các thao tác chậm như Network I/O, gọi API bên thứ ba hoặc chờ người dùng.
+
+Ví dụ:
 
 ```java
-// ❌ NGUY HIỂM: Giữ Transaction mở trong khi gọi API bên thứ 3
+// ❌ Tránh giữ transaction trong lúc chờ API bên ngoài
+
 @Transactional
 public void processPayment() {
-    Order order = orderRepo.findById(1L);
-    
-    // Gọi Network I/O bên thứ ba mất 5 giây -> GIỮ LOCK DATABASE 5 GIÂY!
-    paymentGateway.charge(order.getAmount()); 
-    
+
+    Order order = orderRepo.findById(1L)
+        .orElseThrow();
+
+    // Network I/O có thể mất nhiều giây
+    paymentGateway.charge(order.getAmount());
+
     order.setStatus(PAID);
 }
 ```
-* **Hậu quả:** Gây cạn kiệt Connection Pool và tắc nghẽn Lock Contention nghiêm trọng trong database. Hãy luôn tách Network I/O ra ngoài phạm vi `@Transactional`.
+
+Flow có thể trở thành:
+
+```text
+BEGIN TRANSACTION
+       ↓
+SELECT Order
+       ↓
+Gọi Payment API
+       ↓
+   Chờ vài giây
+       ↓
+UPDATE Order
+       ↓
+COMMIT
+```
+
+Transaction phải được giữ mở trong toàn bộ thời gian chờ API.
+
+### Hậu quả
+
+* Database Connection bị giữ lâu hơn.
+* Connection Pool có thể bị chiếm dụng.
+* Nếu transaction đang giữ lock, thời gian lock có thể kéo dài.
+* Tăng **Lock Contention** và giảm khả năng xử lý concurrent requests.
+
+Vì vậy, nên tránh thiết kế:
+
+```text
+@Transactional
+      ↓
+Database Operation
+      ↓
+Network I/O ❌
+      ↓
+Database Operation
+```
+
+Thay vào đó, nên thiết kế transaction có **phạm vi ngắn và rõ ràng**, đồng thời hạn chế đưa các thao tác bên ngoài Database vào bên trong transaction.
+
 </Tab>
 
 </Tabs>
 
----
-
-## Tóm tắt & Nguyên tắc Vàng
-
-<Cards>
-  <Card title="Flush vs Commit" icon={<RefreshCw className="text-blue-500" />}>
-    `flush()` chỉ đẩy SQL xuống DB buffer; chỉ `commit()` mới giải phóng lock và lưu dữ liệu vĩnh viễn.
-  </Card>
-  <Card title="Short Transactions" icon={<Clock className="text-amber-500" />}>
-    Giữ transaction càng ngắn càng tốt. Tuyệt đối không thực hiện network call (REST, email, third-party) bên trong transaction.
-  </Card>
-  <Card title="FlushMode AUTO" icon={<CheckCircle2 className="text-green-500" />}>
-    Duy trì FlushMode AUTO mặc định để đảm bảo tính nhất quán dữ liệu trước mỗi câu query.
-  </Card>
-</Cards>
+> **Nguyên tắc:** Một transaction nên bao quanh một **business operation hợp lý**, đủ lớn để đảm bảo atomicity nhưng không nên kéo dài bởi các thao tác chậm hoặc không cần thiết.
