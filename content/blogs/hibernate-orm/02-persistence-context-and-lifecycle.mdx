@@ -1,6 +1,6 @@
 ---
-title: "02. Persistence Context & Entity Lifecycle: Cơ chế Dirty Checking & Proxy"
-description: "Phân tích chuyên sâu 4 trạng thái Entity, First-Level Cache, cơ chế Hibernate Dirty Checking, Dynamic Update và cách vận hành của Lazy Loading Proxy."
+title: "02. Persistence Context & Entity Lifecycle"
+description: "Phân tích vòng đời Entity, First-Level Cache, Dirty Checking, Dynamic Update và cơ chế Lazy Loading Proxy trong Hibernate."
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
@@ -8,36 +8,29 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { RefreshCw, Database, Layers, CheckCircle2, AlertTriangle, Cpu, Zap, Box } from 'lucide-react';
 
-**Persistence Context** là "trái tim" của Hibernate ORM. Nó đóng vai trò là một vùng nhớ đệm cấp 1 (**First-Level Cache**) gắn liền với vòng đời của một `EntityManager` (hoặc `Session`). Hiểu rõ cách Persistence Context theo dõi trạng thái entity và cơ chế tự động sinh SQL là chìa khóa để làm chủ hiệu năng của Hibernate.
+Persistence Context là một thành phần cốt lõi của Hibernate ORM. Nó quản lý các Entity trong một Unit of Work và được gắn với vòng đời của EntityManager (hoặc Session).
+
+Persistence Context đồng thời hoạt động như First-Level Cache, giúp Hibernate quản lý identity của Entity, theo dõi thay đổi và thực hiện Dirty Checking để đồng bộ trạng thái Entity với Database khi flush.
+
+Hiểu rõ Persistence Context và vòng đời Entity là nền tảng để hiểu cách Hibernate quản lý dữ liệu, sinh SQL và thực hiện Lazy Loading.
 
 ---
 
 ## 1. 4 Trạng thái của Entity trong Vòng đời (Entity Lifecycle)
 
-Tại bất kỳ thời điểm nào, một Java Entity instance chỉ có thể nằm ở một trong 4 trạng thái đối với Persistence Context:
+Trong JPA/Hibernate, một Entity instance có thể trải qua 4 trạng thái chính tùy theo mối quan hệ của nó với Persistence Context:
 
-```mermaid
-stateDiagram-v2
-    [*] --> Transient : new Entity()
-    
-    Transient --> Managed : persist() / find()
-    Managed --> Detached : detach() / clear() / close()
-    Detached --> Managed : merge()
-    
-    Managed --> Removed : remove()
-    Removed --> Managed : persist()
-    
-    Removed --> [*] : flush() & commit()
-```
+![kien-truc](/images/hibernate-orm/entity-lifecycle.png)
 
-### Chi tiết các trạng thái:
 
-| Trạng thái | Định nghĩa | Có ID? | Được theo dõi thay đổi? |
-| :--- | :--- | :---: | :---: |
-| **`Transient` (New)** | Entity vừa được khởi tạo bằng từ khóa `new`. Chưa từng liên kết với Persistence Context và chưa có bản ghi trong DB. | ❌ Thường chưa có | ❌ Không |
-| **`Managed` (Persistent)** | Entity đang được liên kết và quản lý bởi một Persistence Context. Có ID và đại diện cho 1 row trong DB. | ✅ Có | ✅ **Tự động theo dõi (Dirty Checking)** |
-| **`Detached`** | Entity từng ở trạng thái Managed nhưng Session đã đóng (`close()`), bị xóa khỏi cache (`detach()`, `clear()`). | ✅ Có | ❌ Không theo dõi tự động |
-| **`Removed`** | Entity được đánh dấu sẽ bị xóa khỏi database khi Session flush (`remove()`). | ✅ Có | ✅ Đang chờ DELETE SQL |
+### Chi tiết các trạng thái
+
+| Trạng thái                 | Định nghĩa                                                                                                                                                    |         Có ID?         | Được Persistence Context theo dõi? |
+| :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------: | :--------------------------------: |
+| **`Transient` (New)**      | Entity vừa được tạo bằng `new`. Chưa được Persistence Context quản lý và chưa được persist vào Database.                                                      | ⚠️ Có thể có hoặc chưa |               ❌ Không              |
+| **`Managed` (Persistent)** | Entity đang được Persistence Context quản lý. Hibernate theo dõi thay đổi của Entity và có thể đồng bộ các thay đổi xuống Database khi `flush`.               |       ✅ Thường có      |        ✅ **Dirty Checking**        |
+| **`Detached`**             | Entity trước đó từng là `Managed` nhưng không còn được Persistence Context quản lý, chẳng hạn sau `detach()`, `clear()` hoặc `EntityManager/Session.close()`. |          ✅ Có          |               ❌ Không              |
+| **`Removed`**              | Entity đang được Persistence Context quản lý nhưng đã được đánh dấu để xóa bằng `remove()`. Lệnh `DELETE` thường được thực hiện khi `flush`.                  |          ✅ Có          |        ✅ Đang chờ **DELETE**       |
 
 <Callout type="info" title="Bất biến quan trọng trong JPA">
 **Tại bất kỳ thời điểm nào, một entity instance cụ thể chỉ có thể được liên kết với tối đa một Persistence Context duy nhất.**
@@ -47,28 +40,60 @@ stateDiagram-v2
 
 ## 2. First-Level Cache & Identity Map
 
-Khi bạn gọi `entityManager.find()` nhiều lần cho cùng một ID trong cùng một Transaction/Session:
+**Persistence Context** cũng hoạt động như **First-Level Cache**, được dùng để quản lý các Entity đang ở trạng thái `Managed`.
+
+Khi gọi `find()` nhiều lần cho cùng một Entity trong **cùng Persistence Context**:
 
 ```java
-User user1 = entityManager.find(User.class, 1L); // Sinh câu lệnh SELECT DB
-User user2 = entityManager.find(User.class, 1L); // Đọc trực tiếp từ First-Level Cache (Không có SQL)
+User user1 = entityManager.find(User.class, 1L);
+// SELECT ... FROM users WHERE id = 1
 
-System.out.println(user1 == user2); // TRUE (Cùng một tham chiếu Object trong Java Heap)
+User user2 = entityManager.find(User.class, 1L);
+// Không phát sinh SELECT
+
+System.out.println(user1 == user2); // true
 ```
 
-```
-Persistence Context (First-Level Cache)
-┌──────────────┬────────────────────────┬──────────────────────────────────────────┐
-│ Entity Class │ Entity Identifier (ID) │ Java Object Reference in Heap            │
-├──────────────┼────────────────────────┼──────────────────────────────────────────┤
-│ User.class   │ 1L                     │ User@0x7f8b1a (name="Alice", ...)        │
-│ Order.class  │ 100L                   │ Order@0x3e2c91 (total=500, ...)          │
-└──────────────┴────────────────────────┴──────────────────────────────────────────┘
+Lần đầu Hibernate truy vấn Database và đưa Entity vào Persistence Context.
+
+Lần sau, Hibernate tìm thấy Entity đã tồn tại trong Persistence Context nên trả về **chính object đó**.
+
+```text
+Persistence Context
+┌─────────────────────────────────┐
+│ User#1 → User@0x7f8b1a          │
+│ Order#100 → Order@0x3e2c91      │
+└─────────────────────────────────┘
 ```
 
-Persistence Context hoạt động như một **Identity Map Pattern**:
-1. **Tránh truy vấn thừa:** Lặp lại việc đọc cùng 1 record sẽ không phát sinh thêm câu lệnh SQL xuống DB.
-2. **Đảm bảo tính nhất quán (Repeatable Read trong memory):** Tránh hiện tượng 2 object đại diện cho cùng 1 bản ghi DB có dữ liệu bất đồng bộ trong cùng 1 request.
+### Identity Map
+
+Persistence Context hoạt động theo nguyên tắc **Identity Map**:
+
+* **Tránh SQL dư thừa:** Cùng một Entity trong cùng Context không cần SELECT lại.
+* **Đảm bảo Identity:** Một Entity identity chỉ có một Java object tương ứng trong cùng Persistence Context.
+
+```text
+Entity Identity
+(User.class, 1L)
+       ↓
+Persistence Context
+       ↓
+   User Object
+       ↓
+   Java Heap
+```
+
+<Callout type="info" title="Cách nhớ">
+
+**Cùng Persistence Context + cùng Entity ID → cùng Java Object.**
+
+```java
+user1 == user2 // true
+```
+
+Điều này **chỉ đảm bảo trong cùng Persistence Context**. Hai Persistence Context khác nhau có thể có hai Java object khác nhau nhưng cùng đại diện cho `User#1`.
+</Callout>
 
 ---
 
@@ -105,8 +130,7 @@ sequenceDiagram
 ```
 
 ### Khi nào nên dùng `getReference()`?
-Khi bạn chỉ cần gán **Foreign Key** cho một Entity khác mà không cần đọc dữ liệu thực tế của đối tượng cha.
-
+Một trường hợp phổ biến là khi bạn chỉ cần tham chiếu đến Entity để thiết lập Foreign Key, nhưng không cần đọc dữ liệu của Entity đó.
 ```java
 // Tạo đơn hàng mới cho User có id = 10L
 Order order = new Order();
@@ -124,159 +148,276 @@ entityManager.persist(order); // INSERT INTO orders (user_id, amount) VALUES (10
 ## 4. Dirty Checking & Cơ chế sinh SQL `UPDATE`
 
 ### Dirty Checking hoạt động như thế nào?
-Khi một Entity chuyển sang trạng thái **Managed**, Hibernate sẽ lưu một **Snapshot (Bản sao)** ban đầu của toàn bộ state entity đó trong Persistence Context.
 
-Khi Transaction chuẩn bị kết thúc hoặc kích hoạt `flush()`:
-1. Hibernate duyệt qua toàn bộ Managed Entities.
-2. So sánh trạng thái hiện tại của Entity với Snapshot ban đầu.
-3. Nếu phát hiện có sự thay đổi (dirty), Hibernate tự động lên lịch sinh câu lệnh SQL `UPDATE`.
+Khi một Entity ở trạng thái **Managed**, Hibernate sẽ quản lý state của Entity trong **Persistence Context** và thường lưu lại một **Snapshot** của state ban đầu để phục vụ việc so sánh.
+
+Khi Hibernate thực hiện **`flush()`**:
+
+1. Hibernate kiểm tra các Entity đang ở trạng thái `Managed`.
+2. So sánh **state hiện tại** của Entity với Snapshot.
+3. Nếu phát hiện state đã thay đổi (**dirty**), Hibernate xác định cần thực hiện `UPDATE`.
+4. Hibernate sinh SQL `UPDATE` và đưa lệnh đó vào quá trình đồng bộ với Database.
 
 ```java
 @Transactional
 public void updateProductPrice(Long productId) {
-    Product product = entityManager.find(Product.class, productId); // Loaded & Snapshot
-    
-    product.setPriceCents(2499); // Thay đổi state
-    
-    // Không cần gọi entityManager.save() hay update()!
-    // Hibernate Dirty Checking sẽ tự động phát hiện và sinh UPDATE khi commit transaction.
+
+    Product product =
+        entityManager.find(Product.class, productId);
+    // Entity → Managed
+    // Hibernate lưu state ban đầu (Snapshot)
+
+    product.setPriceCents(2499);
+    // Thay đổi state của Entity trong Java
+
+    // Không cần gọi save() hoặc update()!
+    // Khi flush(), Hibernate Dirty Checking
+    // sẽ phát hiện price đã thay đổi
 }
 ```
 
----
-
-## 5. Bí ẩn: Tại sao chỉ sửa 1 field nhưng `UPDATE` toàn bộ cột?
-
-Mặc định, khi bạn chỉ sửa `priceCents`, Hibernate vẫn sinh câu lệnh SQL như sau:
+Hibernate có thể sinh:
 
 ```sql
-UPDATE product 
-SET description = ?, name = ?, price_cents = ?, quantity = ? 
+UPDATE product
+SET price_cents = 2499
 WHERE id = ?;
 ```
 
-### Tại sao Hibernate lại làm vậy?
+### Điều gì thực sự xảy ra?
 
-```mermaid
-graph LR
-    subgraph DefaultStrategy [Mặc định: Static SQL Template]
-        P1[Update Price] --> SQL1[UPDATE product SET desc=?, name=?, price=?, qty=? WHERE id=?]
-        P2[Update Name] --> SQL1
-        P3[Update Qty] --> SQL1
-        SQL1 --> JDBC_CACHE[(JDBC PreparedStatement Cache)]
-    end
+```text
+find()
+   ↓
+Database
+   ↓
+Product Entity
+   ↓
+Managed
+   ↓
+Snapshot
+   │
+   │  product.setPriceCents(2499)
+   ↓
+Entity bị thay đổi
+   │
+   │ flush()
+   ↓
+Dirty Checking
+   │
+   ├── State giống Snapshot
+   │       ↓
+   │     Không UPDATE
+   │
+   └── State khác Snapshot
+           ↓
+        Sinh UPDATE
+           ↓
+        Database
 ```
 
-Có 2 lý do kỹ thuật quan trọng:
-1. **JDBC PreparedStatement Caching:** Database và JDBC Driver có thể cache lại Query Execution Plan cho cùng một khuôn mẫu SQL. Nếu mỗi field thay đổi sinh ra 1 câu SQL khác nhau, DB phải re-parse và compile lại liên tục.
-2. **JDBC Batching:** Khi update nhiều bản ghi khác nhau trong cùng 1 transaction, việc có chung một dạng SQL template giúp Hibernate dễ dàng gộp chúng thành một **Batch Update** duy nhất gửi qua network.
 
----
+### ⚠️ Dirty Checking không đồng nghĩa với `commit()`
 
-## 6. Khi nào nên dùng `@DynamicUpdate`?
+`Dirty Checking` xảy ra trong quá trình **`flush()`**, còn `commit()` là thao tác hoàn tất Transaction.
 
-Nếu Entity của bạn có **quá nhiều cột (hàng chục cột)** hoặc bảng có nhiều **Index/Trigger**, việc update các cột không thay đổi có thể gây tải thêm cho DB. Lúc này bạn có thể kích hoạt `@DynamicUpdate`:
+Có thể hình dung:
+
+```text
+Transaction
+│
+├── thay đổi Entity
+│
+├── flush()
+│    └── Dirty Checking
+│         └── sinh SQL UPDATE
+│
+├── ... có thể flush thêm ...
+│
+└── commit()
+     └── hoàn tất Transaction
+```
+
+Vì vậy:
+
+> **Dirty Checking phát hiện thay đổi và chuẩn bị SQL trong quá trình flush. `commit()` không phải là nơi Dirty Checking trực tiếp xảy ra.**
+
+## 5. Dynamic Update: Tại sao sửa 1 field nhưng `UPDATE` nhiều cột?
+
+Giả sử chỉ thay đổi:
+
+```java
+product.setPriceCents(2499);
+```
+
+Hibernate **mặc định** có thể sinh:
+
+```sql
+UPDATE product
+SET description = ?,
+    name = ?,
+    price_cents = ?,
+    quantity = ?
+WHERE id = ?;
+```
+
+### Tại sao?
+
+Mặc định Hibernate sử dụng **Static SQL** — một SQL template cố định cho Entity.
+
+```text
+Dirty Checking
+      ↓
+Biết priceCents thay đổi
+      ↓
+Static SQL
+      ↓
+UPDATE nhiều mapped columns
+```
+
+SQL có **shape ổn định** giúp:
+
+* Tái sử dụng `PreparedStatement` thuận lợi hơn.
+* Hỗ trợ **JDBC batching** tốt hơn khi có nhiều `UPDATE` cùng loại.
+
+Ngoài ra, nếu các column được `UPDATE` thực sự thay đổi và chúng có **Index**, Database có thể phải cập nhật các Index liên quan → tăng chi phí ghi.
+
+### `@DynamicUpdate`
+
+Có thể yêu cầu Hibernate tạo SQL dựa trên các column thực sự thay đổi:
 
 ```java
 @Entity
-@Table(name = "products")
 @DynamicUpdate
 public class Product {
-    @Id
-    private Long id;
-    
-    private String name;
-    private Integer priceCents;
-    private String description;
-    // ... 30 trường khác
+    // ...
 }
 ```
 
-Khi có `@DynamicUpdate`, Hibernate sẽ tính toán và sinh SQL động tại runtime:
+Chỉ thay đổi `priceCents`:
+
 ```sql
-UPDATE products 
-SET price_cents = ? 
+UPDATE product
+SET price_cents = ?
 WHERE id = ?;
 ```
 
-| Tiêu chí | Mặc định (Static Update) | `@DynamicUpdate` |
-| :--- | :--- | :--- |
-| **SQL Shape** | Cố định toàn bộ cột | Động (chỉ cột thay đổi) |
-| **PreparedStatement Cache** | ✅ Tận dụng tối đa | ❌ Kém hơn do nhiều biến thể SQL |
-| **Batch Updates** | ✅ Rất tốt | ⚠️ Khó batching nếu các entity sửa field khác nhau |
-| **Phù hợp cho** | Đa số các Entity thông thường | Entity lớn (nhiều text/blob, nhiều index, bảng rộng) |
+**Ưu điểm:**
+
+* SQL chỉ chứa column cần update.
+* Có thể giảm chi phí ghi và duy trì Index không liên quan.
+
+**Nhược điểm:**
+
+* Tạo nhiều SQL shape khác nhau.
+* Có thể giảm khả năng `PreparedStatement` reuse và JDBC batching.
 
 ---
+## 6. Xử lý Detached Data: `merge()`, `refresh()` và `Cascade`
 
-## 7. Xử lý Detached Data: `merge()`, `refresh()` và `Cascade`
-
-<Tabs items={['merge()', 'refresh()', 'Cascading Types']}>
+<Tabs items={['merge()', 'refresh()', 'Cascade']}>
 
 <Tab value="merge()">
 
-`merge()` nhận vào một Detached Entity, nạp bản ghi tương ứng từ DB vào Persistence Context (nếu chưa có), sau đó copy toàn bộ state từ Detached Entity sang Managed Entity và trả về instance Managed đó.
+### `merge()`
+
+`merge()` dùng để đưa state của một **Detached Entity** vào Persistence Context.
+
+Hibernate trả về một **Managed Entity**. Entity Detached ban đầu **vẫn là Detached**.
 
 ```java
 // userDetached đang ở trạng thái Detached
 userDetached.setName("New Name");
 
-// mergedUser là Managed instance, userDetached VẪN LÀ Detached!
 User mergedUser = entityManager.merge(userDetached);
 
-mergedUser.setName("Another Update"); // Được theo dõi bởi Dirty Checking
+// mergedUser → Managed
+// userDetached → vẫn Detached
+
+mergedUser.setName("Another Update");
+// Được Dirty Checking theo dõi
 ```
 
-<Callout type="warn" title="Lưu ý">
-Luôn sử dụng object trả về từ `merge()` (`mergedUser`) để tiếp tục thao tác, không dùng lại biến `userDetached` cũ.
+<Callout type="warn" title="Cách dùng">
+
+Sau `merge()`, nên tiếp tục làm việc với **object được trả về**:
+
+```java
+User managedUser = entityManager.merge(userDetached);
+```
+
+Không nên tiếp tục sử dụng `userDetached` để chờ Dirty Checking.
+
 </Callout>
+
 </Tab>
 
 <Tab value="refresh()">
 
-`refresh()` xóa bỏ toàn bộ thay đổi chưa flush trong Persistence Context của Entity và đọc lại nguyên trạng dữ liệu mới nhất từ Database.
+### `refresh()`
+
+`refresh()` đọc lại dữ liệu từ **Database** và ghi đè state hiện tại của Entity.
+
+Các thay đổi trong memory của Entity đó chưa được flush sẽ bị thay thế.
 
 ```java
 User user = entityManager.find(User.class, 1L);
+
 user.setName("Temporary Change");
 
-// Huỷ bỏ thay đổi trong memory, nạp lại từ DB
 entityManager.refresh(user);
 
-System.out.println(user.getName()); // Giá trị gốc trong Database
+// State của user được đọc lại từ DB
+System.out.println(user.getName());
 ```
+
+```text
+Entity trong Memory
+      ↓
+   refresh()
+      ↓
+SELECT từ Database
+      ↓
+Ghi đè state hiện tại
+```
+
+> `refresh()` thường dùng khi muốn **bỏ thay đổi trong memory và lấy lại dữ liệu từ DB**.
+
 </Tab>
 
-<Tab value="Cascading Types">
+<Tab value="Cascade">
 
-Cascade xác định các thao tác (`persist`, `merge`, `remove`,...) trên Entity cha có tự động lan truyền sang Entity con hay không:
+### Cascade
 
-| CascadeType | Hành vi |
-| :--- | :--- |
-| **`PERSIST`** | `persist(parent)` $\to$ tự động `persist(child)` |
-| **`MERGE`** | `merge(parent)` $\to$ tự động `merge(child)` |
-| **`REMOVE`** | `remove(parent)` $\to$ tự động `remove(child)` |
-| **`ALL`** | Bao gồm tất cả các thao tác trên |
+`Cascade` xác định một thao tác trên Entity có được **tự động lan truyền** sang Entity liên quan hay không.
+
+| `CascadeType` | Hành vi                              |
+| :------------ | :----------------------------------- |
+| `PERSIST`     | `persist(parent)` → `persist(child)` |
+| `MERGE`       | `merge(parent)` → `merge(child)`     |
+| `REMOVE`      | `remove(parent)` → `remove(child)`   |
+| `ALL`         | Bao gồm các cascade type trên        |
+
+Ví dụ:
 
 ```java
-@OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
+@OneToMany(
+    mappedBy = "order",
+    cascade = CascadeType.ALL,
+    orphanRemoval = true
+)
 private List<OrderItem> items = new ArrayList<>();
 ```
+
+Khi:
+
+```java
+entityManager.persist(order);
+```
+
+Cascade `PERSIST` trong `ALL` sẽ tự động persist các `OrderItem` liên quan.
+
 </Tab>
 
 </Tabs>
 
----
-
-## Tóm tắt & Điểm cốt lõi
-
-<Cards>
-  <Card title="Dirty Checking" icon={<RefreshCw className="text-blue-500" />}>
-    Tự động đồng bộ các thay đổi trong memory xuống DB khi flush mà không cần gọi hàm update thủ công.
-  </Card>
-  <Card title="Proxy & getReference" icon={<Zap className="text-amber-500" />}>
-    Sử dụng proxy để gán khóa ngoại mà không tốn chi phí câu lệnh SELECT không cần thiết.
-  </Card>
-  <Card title="Trade-off @DynamicUpdate" icon={<Cpu className="text-purple-500" />}>
-    Chỉ dùng `@DynamicUpdate` cho các bảng rộng nhiều cột; ưu tiên mặc định để tối ưu Prepared Statement Caching & Batching.
-  </Card>
-</Cards>
