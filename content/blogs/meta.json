@@ -3,9 +3,12 @@
   "pages": [
     "---Introduction---",
     "camdao-introduce",
+    "---Hibernate---",
+    "hibernate-orm",
     "---Redis---",
     "redis/redis-lua",
     "---My Project---",
+    "ticket-project",
     "ticket-project/lua-seat",
     "---Aws---",
     "fcj-workshop"

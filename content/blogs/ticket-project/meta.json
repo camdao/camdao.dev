@@ -1,0 +1,7 @@
+{
+  "title": "Ticket Project",
+  "icon": "Ticket",
+  "pages": [
+    "lua-seat"
+  ]
+}

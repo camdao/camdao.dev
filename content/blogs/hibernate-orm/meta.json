@@ -1,0 +1,11 @@
+{
+  "title": "Hibernate ORM",
+  "icon": "Database",
+  "pages": [
+    "01-architecture-and-domain-model",
+    "02-persistence-context-and-lifecycle",
+    "03-flushing-and-transactions",
+    "04-locking-mechanisms",
+    "05-fetching-and-query-tuning"
+  ]
+}

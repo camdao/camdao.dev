@@ -1,0 +1,538 @@
+---
+title: "01. Hibernate Architecture & Domain Model Mapping"
+description: "Tìm hiểu kiến trúc Hibernate ORM và cách ánh xạ Entity, Identifier, Association và Inheritance từ Java sang Database."
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Database, Layers, Code2, Cpu, CheckCircle2, AlertTriangle, ShieldCheck, Box } from 'lucide-react';
+
+Khi phát triển ứng dụng Java Backend, việc tương tác trực tiếp với cơ sở dữ liệu quan hệ (RDBMS) bằng JDBC thuần thường dẫn đến nhiều đoạn **boilerplate code**, chẳng hạn như xử lý `ResultSet`, `PreparedStatement`, đồng thời phải tự quản lý quá trình ánh xạ dữ liệu giữa các đối tượng Java và bảng trong cơ sở dữ liệu. Điều này làm phát sinh vấn đề **Object-Relational Impedance Mismatch**.
+
+**Hibernate ORM** đóng vai trò là một framework ORM, giúp giải quyết những vấn đề trên bằng cách tự động ánh xạ các đối tượng Java (POJO) với các bảng trong cơ sở dữ liệu, cũng như chuyển đổi dữ liệu từ database thành các đối tượng Java và ngược lại.
+
+---
+
+## 1. Kiến trúc Hibernate ORM & JPA
+
+Hibernate là một JPA Provider (implementation của Jakarta Persistence), cung cấp cơ chế thực thi các API và quy tắc được định nghĩa bởi JPA (Jakarta Persistence).
+
+Hiểu đơn giản:
+- JPA là một specification (chuẩn), định nghĩa các API và quy tắc để làm việc với persistence, chẳng hạn như EntityManager, EntityManagerFactory.
+- Hibernate là một implementation của JPA, đồng thời cung cấp các Hibernate Native API như Session, SessionFactory, Transaction và nhiều tính năng mở rộng khác.
+
+![kien-truc](/images/hibernate-orm/kien-truc.png)
+
+### Các thành phần cốt lõi:
+- EntityManagerFactory (JPA) / SessionFactory (Hibernate): Đối tượng thread-safe, thường được khởi tạo một lần và dùng trong suốt vòng đời ứng dụng. Nó chứa metadata mapping, cấu hình và được dùng để tạo EntityManager hoặc Session.
+- EntityManager (JPA) / Session (Hibernate): Đối tượng non-thread-safe, thường đại diện cho một Unit of Work. Nó quản lý Persistence Context, theo dõi các entity và cung cấp các thao tác như persist(), find(), remove(), merge().
+- Persistence Context: Là vùng quản lý các entity mà JPA/Hibernate đang theo dõi trong một Unit of Work. Nó hoạt động như First-Level Cache, đồng thời giúp phát hiện các thay đổi của entity và đồng bộ chúng xuống database khi flush.
+
+---
+
+## 2. Tiêu chuẩn của một JPA Entity (POJO Models)
+
+Để Hibernate có thể quản lý một class Java như một **Entity**, class đó phải tuân thủ các quy tắc của **JPA Specification**:
+
+```java
+@Entity
+public class BookEntity {
+
+    @Id
+    private Long id;
+
+    private String title;
+    private String author;
+
+    protected BookEntity() {
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+}
+```
+
+<Callout type="warn" title="Tại sao Entity class và method không nên khai báo final?">
+
+Hibernate có thể sử dụng **proxy** để hỗ trợ các cơ chế như **Lazy Loading**. Proxy có thể cần kế thừa Entity class và override các method cần thiết.
+
+Nếu class hoặc method được khai báo `final`, proxy không thể kế thừa hoặc override chúng. Điều này có thể khiến một số cơ chế của Hibernate, đặc biệt là **Lazy Loading**, không hoạt động như mong muốn.
+
+</Callout>
+
+### Yêu cầu cơ bản
+
+1. **`@Entity`**: Đánh dấu class là một Entity được JPA/Hibernate quản lý.
+
+2. **Top-level Class**: Entity phải là một class độc lập, không phải `enum`, `interface` hoặc `record`.
+
+3. **No-arg Constructor**: Entity phải có constructor không tham số với phạm vi truy cập `public` hoặc `protected`.
+
+4. **Non-final**: Entity class và các method cần được Hibernate proxy nên không khai báo `final`.
+
+5. **Identifier**: Entity phải có một thuộc tính định danh, thường được đánh dấu bằng `@Id`.
+
+### Ví dụ
+
+Trong ví dụ trên:
+
+- `@Entity` → khai báo `BookEntity` là Entity.
+- `@Id` → xác định `id` là thuộc tính định danh.
+- `protected BookEntity()` → no-arg constructor.
+- Class và các method cần thiết không khai báo `final` → cho phép Hibernate sử dụng proxy khi cần.
+
+---
+## 3. Access Strategies: Field vs Property Access
+
+**Access Strategy** xác định cách JPA/Hibernate đọc và ghi dữ liệu của một Entity.
+
+Có 2 cách chính:
+
+- **Field Access**: Hibernate truy cập trực tiếp vào các `field`.
+- **Property Access**: Hibernate truy cập thông qua `getter` và `setter`.
+
+JPA xác định Access Strategy dựa vào vị trí của annotation `@Id`.
+
+<Tabs items={['Field Access', 'Property Access', '@Transient']}>
+
+<Tab value="Field Access">
+
+### Field Access
+
+Nếu đặt `@Id` **trực tiếp trên field**, Hibernate sử dụng **Field Access**.
+
+```java
+@Entity
+public class Book {
+
+    @Id
+    private Long id;
+
+    private String title;
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+}
+```
+
+Hibernate sẽ đọc và ghi dữ liệu **trực tiếp vào field**, không cần gọi getter/setter.
+
+**Ưu điểm:** Getter/setter có thể chứa logic riêng mà không ảnh hưởng đến cách Hibernate persistence state.
+
+</Tab>
+
+<Tab value="Property Access">
+
+### Property Access
+
+Nếu đặt `@Id` **trên getter**, Hibernate sử dụng **Property Access**.
+
+```java
+@Entity
+public class Book {
+
+    private Long id;
+    private String title;
+
+    @Id
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+}
+```
+
+Hibernate sẽ sử dụng **getter/setter** để đọc và ghi dữ liệu của Entity.
+
+Vì vậy, getter/setter nên đơn giản và tránh các **side effect** không cần thiết.
+
+</Tab>
+
+<Tab value="@Transient">
+
+### `@Transient`
+
+Nếu một field chỉ dùng trong Java và **không muốn lưu vào database**, sử dụng `@Transient`.
+
+```java
+@Entity
+public class Book {
+
+    @Id
+    private Long id;
+
+    private String title;
+
+    @Transient
+    private boolean available;
+
+    public boolean checkAvailability() {
+        return title != null && !title.isBlank();
+    }
+}
+```
+
+`available` vẫn tồn tại trong Java object nhưng **không được Hibernate mapping thành column trong database**.
+
+</Tab>
+
+</Tabs>
+
+> **Thực tế:** Field Access thường đơn giản và phổ biến hơn, đặc biệt khi Entity sử dụng encapsulation và business logic bên trong domain model.
+
+## 4. Identifier Generation Strategies (`@GeneratedValue`)
+
+Mỗi Entity cần có một **Primary Key** được đánh dấu bằng `@Id`.
+
+`@GeneratedValue` cho phép Hibernate tự động sinh giá trị cho `id`.
+
+### Các Strategy phổ biến
+
+| Strategy       | Cách hoạt động                                          | Ưu / Nhược điểm                                            |
+| :------------- | :------------------------------------------------------ | :--------------------------------------------------------- |
+| **`IDENTITY`** | Database tự động tăng ID (`AUTO_INCREMENT` trong MySQL) | Đơn giản, nhưng hạn chế JDBC Batch Insert                  |
+| **`SEQUENCE`** | Sử dụng Database Sequence để sinh ID                    | Có thể lấy ID trước khi `INSERT` → hỗ trợ Batch Insert tốt |
+| **`UUID`**     | Sinh UUID 128-bit ở application hoặc database           | Phù hợp với hệ thống phân tán, scale ngang                 |
+
+<Tabs items={['IDENTITY', 'SEQUENCE', 'UUID']}>
+
+<Tab value="IDENTITY">
+
+### `IDENTITY`
+
+Database chịu trách nhiệm tự động tăng ID.
+
+```java
+@Id
+@GeneratedValue(strategy = GenerationType.IDENTITY)
+private Long id;
+```
+
+Ví dụ MySQL:
+
+```sql
+id BIGINT AUTO_INCREMENT PRIMARY KEY
+```
+
+Luồng hoạt động:
+
+```text
+Hibernate
+    ↓
+INSERT
+    ↓
+Database tạo ID
+    ↓
+Hibernate nhận ID
+```
+
+Hibernate chỉ biết ID **sau khi database thực hiện `INSERT`**.
+
+<Callout type="warn">
+`IDENTITY` hạn chế JDBC Batch Insert vì Hibernate cần thực hiện `INSERT` để lấy ID.
+</Callout>
+
+</Tab>
+
+<Tab value="SEQUENCE">
+
+### `SEQUENCE`
+
+Database sử dụng một **Sequence** riêng để sinh ID.
+
+```java
+@Id
+@GeneratedValue(
+    strategy = GenerationType.SEQUENCE,
+    generator = "book_seq_gen"
+)
+@SequenceGenerator(
+    name = "book_seq_gen",
+    sequenceName = "book_seq",
+    allocationSize = 50
+)
+private Long id;
+```
+
+Hibernate có thể lấy ID **trước khi thực hiện `INSERT`**:
+
+```text
+Sequence
+    ↓
+Hibernate lấy ID
+    ↓
+Entity có ID
+    ↓
+Batch INSERT
+    ↓
+Database
+```
+
+`allocationSize = 50` cho phép Hibernate phân bổ ID theo từng nhóm thay vì phải lấy từng ID một.
+
+<Callout type="info">
+`SEQUENCE` thường phù hợp với JDBC Batch Insert vì Hibernate có thể biết ID trước khi thực hiện `INSERT`.
+</Callout>
+
+</Tab>
+
+<Tab value="UUID">
+
+### `UUID`
+
+UUID là một Identifier có kích thước **128-bit**.
+
+Ví dụ:
+
+```text
+550e8400-e29b-41d4-a716-446655440000
+```
+
+```java
+@Id
+@GeneratedValue
+private UUID id;
+```
+
+**Ưu điểm:**
+
+* Không cần ID tăng dần.
+* Giảm nguy cơ trùng ID trong hệ thống phân tán.
+* Phù hợp với hệ thống scale ngang.
+
+<Callout type="warn">
+UUID lớn hơn `Long`, vì vậy có thể làm tăng kích thước index và ảnh hưởng đến hiệu năng database.
+</Callout>
+
+</Tab>
+
+</Tabs>
+
+---
+## 5. Association Mapping & Owning Side
+
+Khi mapping các mối quan hệ giữa Entity, cần xác định **Owning Side** — phía chịu trách nhiệm quản lý **Foreign Key** trong database.
+
+Ví dụ:
+
+```text
+Department
+    │
+    │ 1
+    │
+    │
+    │ N
+    ▼
+Employee
+
+Employee.department_id → Department.id
+```
+
+Trong trường hợp này:
+
+* `Employee` chứa `department_id` → **Owning Side**.
+* `Department` không chứa Foreign Key → **Inverse / Non-Owning Side**.
+
+### Quy tắc `mappedBy`
+
+<Tabs items={['Owning Side', 'Inverse Side']}>
+
+<Tab value="Owning Side">
+
+### Owning Side
+
+Owning Side là phía **trực tiếp quản lý Foreign Key**.
+
+Thông thường, trong quan hệ `@ManyToOne`, phía `@ManyToOne` là Owning Side.
+
+```java id="x8k4mp"
+@Entity
+public class Employee {
+
+    @Id
+    private Long id;
+
+    private String name;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+}
+```
+
+`@JoinColumn(name = "department_id")` cho Hibernate biết rằng Entity `Employee` sử dụng column `department_id` để lưu Foreign Key.
+
+Database:
+
+```text id="m4v8qs"
+employee
+----------------
+id
+name
+department_id  → department.id
+```
+
+Khi thay đổi:
+
+```java id="j5r9cx"
+employee.setDepartment(department);
+```
+
+Hibernate sẽ dựa vào phía này để cập nhật Foreign Key.
+
+</Tab>
+
+<Tab value="Inverse Side">
+
+### Inverse / Non-Owning Side
+
+Inverse Side là phía **không trực tiếp quản lý Foreign Key**.
+
+Sử dụng `mappedBy` để chỉ ra rằng mối quan hệ đã được quản lý bởi một field ở Entity bên kia.
+
+```java id="n7w3pz"
+@Entity
+public class Department {
+
+    @Id
+    private Long id;
+
+    private String name;
+
+    @OneToMany(mappedBy = "department")
+    private List<Employee> employees = new ArrayList<>();
+}
+```
+
+Ở đây:
+
+```java
+mappedBy = "department"
+```
+
+nghĩa là:
+
+> `Department.employees` được mapping dựa trên field `department` của Entity `Employee`.
+
+```text id="c6y2ka"
+Department.employees
+        │
+        │ mappedBy = "department"
+        ↓
+Employee.department
+        │
+        ↓
+department_id
+```
+
+<Callout type="info">
+`mappedBy` phải trỏ tới **tên field/property trong Java Entity**, không phải tên column trong database.
+</Callout>
+
+</Tab>
+
+</Tabs>
+
+---
+
+## 6. Kế thừa trong JPA (`@MappedSuperclass`)
+
+Khi nhiều Entity có các field dùng chung như `id`, `createdAt`, `updatedAt`, `createdBy`, có thể sử dụng `@MappedSuperclass` để **tái sử dụng mapping**.
+
+`@MappedSuperclass` cho phép các Entity con kế thừa các field và mapping từ class cha, nhưng **class cha không được mapping thành một bảng riêng**.
+
+### Ví dụ
+
+```java
+@MappedSuperclass
+public abstract class BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = LocalDateTime.now();
+    }
+
+    // Getters & Setters
+}
+```
+
+Entity sử dụng `BaseEntity`:
+
+```java
+@Entity
+@Table(name = "users")
+public class User extends BaseEntity {
+
+    @Column(name = "username", nullable = false, unique = true)
+    private String username;
+
+    // Getters & Setters
+}
+```
+
+### Database
+
+`BaseEntity` **không tạo bảng `base_entity`**.
+
+Các field được kế thừa sẽ trở thành column trong bảng của Entity con:
+
+```text
+users
+--------------------------------
+id
+created_at
+username
+```
+
+Có thể hiểu:
+
+```text
+BaseEntity
+    │
+    │ kế thừa
+    ▼
+  User
+    │
+    ▼
+ users table
+```
+<Callout type="info">
+`@MappedSuperclass` phù hợp khi class cha chỉ dùng để **chia sẻ các field/mapping chung**, không cần truy vấn class cha như một Entity độc lập.
+</Callout>
