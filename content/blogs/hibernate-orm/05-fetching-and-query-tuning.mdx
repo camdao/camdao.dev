@@ -1,6 +1,6 @@
 ---
 title: "05. Tối ưu Hibernate: Giải quyết N+1 Query với JOIN FETCH, EntityGraph và HQL"
-description: "Phân tích nguyên nhân gốc rễ của N+1 Query Problem, kỹ thuật Dynamic Fetching với JOIN FETCH, JPA EntityGraph, DTO Projection và tối ưu truy vấn HQL."
+description: "Giải thích nguyên nhân N+1 Query và các kỹ thuật tối ưu truy vấn Hibernate như JOIN FETCH, EntityGraph, DTO Projection và HQL."
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
@@ -8,35 +8,55 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Zap, Database, Search, AlertOctagon, CheckCircle2, TrendingUp, Layers, Code2 } from 'lucide-react';
 
-Khi ứng dụng Java ORM chạy chậm trong môi trường Production, hơn **80% nguyên nhân xuất phát từ việc lấy dữ liệu không tối ưu (Inefficient Fetching)**. Trong đó, **N+1 Query Problem** là "kẻ giết chết hiệu năng" phổ biến nhất.
+Khi ứng dụng Java ORM chạy chậm trong môi trường Production, một nguyên nhân phổ biến cần kiểm tra là **việc lấy dữ liệu không tối ưu (Inefficient Fetching)**.
+
+Trong đó, **N+1 Query Problem** là một lỗi hiệu năng phổ biến, có thể khiến số lượng truy vấn Database tăng mạnh và làm chậm ứng dụng.
 
 ---
-
 ## 1. Bản chất: EAGER vs LAZY Fetching
 
-Mỗi quan hệ (`@ManyToOne`, `@OneToMany`) trong JPA đều có cấu hình `fetch`:
+Mỗi quan hệ trong JPA (`@ManyToOne`, `@OneToMany`,...) đều có cấu hình `fetch`:
 
 ```java
-@ManyToOne(fetch = FetchType.LAZY) // Chỉ load khi được gọi (Khuyên dùng)
+@ManyToOne(fetch = FetchType.LAZY)
 private Department department;
 
 @OneToMany(mappedBy = "department", fetch = FetchType.LAZY)
 private List<Employee> employees = new ArrayList<>();
 ```
 
-<Callout type="warn" title="Hiểu lầm kinh điển: 'EAGER = Luôn dùng SQL JOIN'">
-Nhiều lập trình viên nghĩ rằng khai báo `FetchType.EAGER` thì Hibernate sẽ luôn tự động `LEFT JOIN` lấy dữ liệu liên quan. 
+### `LAZY`
 
-**Thực tế hoàn toàn không phải vậy!** `EAGER` chỉ có nghĩa là: *"Hãy nạp dữ liệu liên quan ngay lập tức trước khi trả Entity về"*. Khi bạn viết JPQL/HQL: `SELECT e FROM Employee e`, Hibernate sẽ sinh 1 query lấy danh sách Employee, sau đó chạy thêm **N query SELECT riêng lẻ** để nạp Department cho từng Employee $\to$ **Gây ra N+1 Query ngay cả khi dùng EAGER!**
-</Callout>
+Chỉ tải entity liên quan **khi thực sự cần sử dụng**.
 
-👉 **Nguyên tắc bất di bất dịch:** Luôn đặt `FetchType.LAZY` cho tất cả các quan hệ ở Entity Mapping (Static Mapping), sau đó fetch theo từng use case (Dynamic Fetching).
+### `EAGER`
+
+Yêu cầu entity liên quan được **nạp ngay**, trước khi entity chính được trả về cho application.
+
+> ⚠️ **Hiểu lầm kinh điển: `EAGER` = `JOIN`**
+
+`FetchType.EAGER` **không có nghĩa Hibernate luôn dùng SQL `JOIN`**.
+
+Ví dụ:
+
+```java
+List<Employee> employees =
+    entityManager.createQuery(
+        "SELECT e FROM Employee e",
+        Employee.class
+    ).getResultList();
+```
+
+Nếu `department` là `EAGER`, Hibernate có thể phải thực hiện thêm các truy vấn để nạp `Department`. Trong một số trường hợp, điều này có thể dẫn đến **N+1 Query**.
+
+Vì vậy:
+
+> **EAGER không phải là cách giải quyết N+1.**
 
 ---
-
 ## 2. Vấn đề N+1 Query là gì?
 
-Giả sử bạn cần hiển thị danh sách 100 nhân viên kèm tên phòng ban của họ:
+Giả sử bạn cần hiển thị danh sách **100 nhân viên** kèm tên phòng ban của họ:
 
 ```java
 List<Employee> employees = entityManager
@@ -44,60 +64,137 @@ List<Employee> employees = entityManager
     .getResultList(); // Query 1: Lấy danh sách 100 nhân viên
 
 for (Employee e : employees) {
-    // Mỗi vòng lặp kích hoạt 1 câu SELECT phụ nếu department chưa được load!
-    System.out.println(e.getName() + " - " + e.getDepartment().getName()); 
+    // Truy cập association có thể kích hoạt thêm SELECT
+    System.out.println(
+        e.getName() + " - " + e.getDepartment().getName()
+    );
 }
 ```
 
-```
-SQL Logs thực tế phát sinh:
-[Query 1]  SELECT * FROM employee;                    -- Trả về 100 rows
-[Query 2]  SELECT * FROM department WHERE id = 1;     -- Cho employee 1
-[Query 3]  SELECT * FROM department WHERE id = 2;     -- Cho employee 2
-...
-[Query 101] SELECT * FROM department WHERE id = 100;  -- Cho employee 100
+Nếu `department` được fetch riêng cho từng `Employee` và 100 nhân viên thuộc **100 Department khác nhau**, có thể phát sinh:
 
-=> Tổng cộng: 1 + 100 = 101 Queries xuống Database!
+```text
+[Query 1]
+SELECT * FROM employee;
+-- Trả về 100 employees
+
+[Query 2]
+SELECT * FROM department WHERE id = 1;
+-- Department của employee 1
+
+[Query 3]
+SELECT * FROM department WHERE id = 2;
+-- Department của employee 2
+
+...
+
+[Query 101]
+SELECT * FROM department WHERE id = 100;
+-- Department của employee 100
 ```
+
+**Tổng cộng:**
+
+```text
+1 query lấy Employee
++
+100 query lấy Department
+=
+101 queries
+```
+
+Đây chính là **N+1 Query Problem**:
+
+> **1 query** để lấy danh sách entity chính + **N query** để lấy dữ liệu liên quan cho từng entity.
+
+### ⚠️ Lưu ý
+
+N+1 **không phải lúc nào cũng đúng bằng `1 + N` query**. Số query thực tế còn phụ thuộc vào:
+
+* Fetch strategy (`LAZY` / `EAGER`)
+* Các association được truy cập
+* Persistence Context
+* Hibernate caching
+* Cách Hibernate thực hiện fetching
+
+Điểm quan trọng là: **khi mỗi entity trong danh sách kích hoạt thêm một query riêng để lấy association, số lượng query có thể tăng theo số lượng entity.**
 
 ---
-
 ## 3. Các giải pháp xử lý N+1 Query
-
 <Tabs items={['1. JOIN FETCH (HQL/JPQL)', '2. JPA EntityGraph', '3. @BatchSize', '4. DTO Projection']}>
 
 <Tab value="1. JOIN FETCH (HQL/JPQL)">
 
-`JOIN FETCH` hướng dẫn Hibernate thực thi một câu lệnh SQL `JOIN` duy nhất và nạp luôn các đối tượng liên quan vào **Persistence Context**.
+`JOIN FETCH` cho phép Hibernate **fetch association ngay trong cùng truy vấn JPQL/HQL**, thường giúp tránh các truy vấn phụ do lazy loading.
 
 ```java
-// HQL Query
-String hql = "SELECT e FROM Employee e JOIN FETCH e.department";
+String hql = """
+    SELECT e
+    FROM Employee e
+    JOIN FETCH e.department
+    """;
 
 List<Employee> employees = entityManager
     .createQuery(hql, Employee.class)
     .getResultList();
 ```
 
-**SQL sinh ra:**
+Hibernate có thể sinh SQL tương tự:
+
 ```sql
-SELECT e.id, e.name, e.department_id, d.id, d.name
+SELECT
+    e.id,
+    e.name,
+    e.department_id,
+    d.id,
+    d.name
 FROM employee e
-INNER JOIN department d ON e.department_id = d.id;
+INNER JOIN department d
+    ON e.department_id = d.id;
 ```
-$\to$ **Từ 101 queries giảm xuống chỉ còn đúng 1 query duy nhất!**
+
+Thay vì:
+
+```text
+1 query Employee
++
+N query Department
+```
+
+ta có thể chỉ cần:
+
+```text
+1 query Employee + Department
+```
+
+→ Với use case phù hợp, `JOIN FETCH` là một cách trực tiếp để giải quyết N+1.
 
 <Callout type="error" title="Cảnh báo MultipleBagFetchException">
-Không được dùng nhiều hơn 1 `JOIN FETCH` trên các Collection kiểu `List` (Bag) trong cùng một câu query, vì nó sẽ tạo ra tích Đề-các (Cartesian Product) làm bùng nổ số lượng bản ghi trong RAM.
+
+Hibernate có thể gặp `MultipleBagFetchException` khi cố gắng `JOIN FETCH` **nhiều collection kiểu bag** (`List` không có thứ tự/index được Hibernate quản lý như bag) trong cùng một query.
+
+Ví dụ:
+
+```java
+SELECT d
+FROM Department d
+JOIN FETCH d.employees
+JOIN FETCH d.projects
+```
+
+Nếu cả `employees` và `projects` đều là bag, việc join đồng thời có thể tạo ra **Cartesian Product / row multiplication**, khiến số dòng kết quả tăng mạnh.
+
+Vì vậy không nên tùy tiện `JOIN FETCH` nhiều collection trong cùng một query.
+
 </Callout>
+
 </Tab>
 
 <Tab value="2. JPA EntityGraph">
 
-`EntityGraph` cho phép bạn định nghĩa kế hoạch nạp dữ liệu (**Fetch Plan**) một cách linh hoạt mà không cần sửa câu lệnh HQL gốc.
+`EntityGraph` cho phép định nghĩa **fetch plan** cho một use case mà không cần thay đổi câu JPQL/HQL.
 
 ```java
-// Khai báo trên Entity
 @Entity
 @NamedEntityGraph(
     name = "Employee.withDepartmentAndProjects",
@@ -111,144 +208,312 @@ public class Employee {
 }
 ```
 
-**Sử dụng trong code:**
-```java
-EntityGraph<?> graph = entityManager.getEntityGraph("Employee.withDepartmentAndProjects");
+Sử dụng:
 
-List<Employee> list = entityManager.createQuery("SELECT e FROM Employee e", Employee.class)
-    .setHint("jakarta.persistence.fetchgraph", graph) // Chỉ định nạp EAGER cho các node trong graph
+```java
+EntityGraph<?> graph =
+    entityManager.getEntityGraph(
+        "Employee.withDepartmentAndProjects"
+    );
+
+List<Employee> list = entityManager
+    .createQuery(
+        "SELECT e FROM Employee e",
+        Employee.class
+    )
+    .setHint("jakarta.persistence.fetchgraph", graph)
     .getResultList();
 ```
 
-* **`Fetch Graph`**: Các thuộc tính trong graph là `EAGER`, tất cả thuộc tính còn lại là `LAZY`.
-* **`Load Graph`**: Các thuộc tính trong graph là `EAGER`, các thuộc tính còn lại giữ nguyên theo mapping gốc của Entity.
+### `fetchgraph`
+
+Các attribute được chỉ định trong graph được yêu cầu fetch; các attribute khác được xem là `LAZY` theo semantics của JPA fetch graph.
+
+### `loadgraph`
+
+Các attribute được chỉ định trong graph được yêu cầu fetch; các attribute khác giữ fetch strategy theo mapping.
+
+→ `EntityGraph` phù hợp khi muốn **thay đổi fetch plan theo từng use case** mà không phải viết lại query.
+
 </Tab>
 
 <Tab value="3. @BatchSize">
 
-Nếu không thể dùng `JOIN FETCH` (ví dụ đang duyệt collection phân cấp phức tạp), bạn có thể dùng `@BatchSize` để gộp các truy vấn con thành câu lệnh `IN (...)`:
+`@BatchSize` không loại bỏ hoàn toàn việc fetch association, mà giúp Hibernate **gom nhiều entity/collection cần lazy loading vào các batch**, giảm số lượng SQL query.
+
+Ví dụ:
 
 ```java
 @Entity
 public class Department {
+
     @Id
     private Long id;
 
-    @BatchSize(size = 20) // Gom 20 quan hệ vào 1 câu query
+    @BatchSize(size = 20)
     @OneToMany(mappedBy = "department")
     private List<Employee> employees;
 }
 ```
 
-**SQL sinh ra:**
+Khi Hibernate cần lazy load employees của nhiều Department, thay vì:
+
 ```sql
-SELECT * FROM employee WHERE department_id IN (1, 2, 3, 4, 5, ..., 20);
+SELECT * FROM employee WHERE department_id = 1;
+SELECT * FROM employee WHERE department_id = 2;
+SELECT * FROM employee WHERE department_id = 3;
+...
 ```
-$\to$ Giảm từ 100 queries xuống còn `100 / 20 = 5` queries!
+
+Hibernate có thể gom chúng thành các batch:
+
+```sql
+SELECT *
+FROM employee
+WHERE department_id IN (1, 2, 3, ..., 20);
+```
+
+Ví dụ có 100 Department cần load collection:
+
+```text
+100 query riêng lẻ
+
+        ↓
+
+@BatchSize(size = 20)
+
+        ↓
+
+khoảng 5 batch query
+```
+
+→ `@BatchSize` **giảm số lượng query**, nhưng không nhất thiết biến N+1 thành đúng 1 query.
+
 </Tab>
 
-<Tab value="4. DTO Projection (Tối ưu nhất cho Read-Only)">
+<Tab value="4. DTO Projection">
 
-Nếu use case chỉ phục vụ hiển thị báo cáo hoặc trả về API (không cần dirty checking để update), **DTO Projection** là giải pháp có hiệu năng cao nhất vì nó hoàn toàn bỏ qua overhead của Persistence Context.
-
-```java
-// Record DTO bất biến
-public record EmployeeSummaryDTO(Long id, String name, String departmentName) {}
-```
+Nếu use case chỉ cần một số dữ liệu để hiển thị hoặc trả về API, có thể dùng **DTO Projection** thay vì load toàn bộ entity.
 
 ```java
-// Query trực tiếp vào Constructor DTO
-List<EmployeeSummaryDTO> result = entityManager.createQuery(
-    "SELECT new com.example.dto.EmployeeSummaryDTO(e.id, e.name, d.name) " +
-    "FROM Employee e JOIN e.department d", 
-    EmployeeSummaryDTO.class
-).getResultList();
+public record EmployeeSummaryDTO(
+    Long id,
+    String name,
+    String departmentName
+) {}
 ```
 
-* **Ưu điểm:** Chỉ select đúng các cột cần thiết (tránh `SELECT *`), không tốn RAM quản lý snapshot trong First-Level Cache, tốc độ xử lý nhanh gấp nhiều lần.
+Query trực tiếp vào DTO:
+
+```java
+List<EmployeeSummaryDTO> result = entityManager
+    .createQuery("""
+        SELECT new com.example.dto.EmployeeSummaryDTO(
+            e.id,
+            e.name,
+            d.name
+        )
+        FROM Employee e
+        JOIN e.department d
+        """, EmployeeSummaryDTO.class)
+    .getResultList();
+```
+
+### Ưu điểm
+
+* Chỉ lấy những cột thực sự cần thiết.
+* Không trả về entity nên phù hợp với các use case chỉ đọc dữ liệu.
+* Giảm overhead liên quan đến entity management.
+* Phù hợp cho **API response, report và màn hình danh sách**.
+
+> ⚠️ DTO Projection không mặc định là **“nhanh nhất”** trong mọi trường hợp. Hiệu năng còn phụ thuộc vào SQL, index, số lượng dữ liệu, execution plan và workload.
+
 </Tab>
 
 </Tabs>
 
+
 ---
 
-## 4. HQL Querying: Những cú pháp cần nắm vững
-
-**HQL (Hibernate Query Language)** là ngôn ngữ truy vấn hướng đối tượng. Bạn query trên tên **Class Entity** và **tên trường (Field)** trong Java, không query trên tên bảng/cột của Database.
-
-```mermaid
-graph LR
-    HQL[HQL: SELECT e.name FROM Employee e] --> Engine[Hibernate Query Engine]
-    Engine --> SQL[SQL: SELECT e_0.full_name FROM tbl_employee e_0]
-    SQL --> DB[(Database Execution)]
-```
-
-### Tổng hợp cú pháp HQL quan trọng:
+## 4. HQL Querying
+HQL (Hibernate Query Language) là ngôn ngữ truy vấn của Hibernate, cho phép truy vấn Entity và thuộc tính của Entity thay vì truy vấn trực tiếp Table và Column như SQL.
 
 ```java
-// 1. Projection chọn lọc trường (Tuple/Object Array)
+// 1. Projection – chọn một số trường cần thiết
 List<Object[]> rows = entityManager.createQuery(
-    "SELECT e.name, e.salary FROM Employee e WHERE e.salary > :minSalary", Object[].class)
-    .setParameter("minSalary", 50000.0)
-    .getResultList();
+    "SELECT e.name, e.salary " +
+    "FROM Employee e " +
+    "WHERE e.salary > :minSalary",
+    Object[].class
+)
+.setParameter("minSalary", 50000.0)
+.getResultList();
 
-// 2. Aggregation & Group By Having
+// 2. Aggregation + GROUP BY + HAVING
 List<Object[]> deptStats = entityManager.createQuery(
     "SELECT e.department.name, COUNT(e), AVG(e.salary) " +
     "FROM Employee e " +
     "GROUP BY e.department.name " +
     "HAVING COUNT(e) >= 5 " +
-    "ORDER BY AVG(e.salary) DESC", Object[].class)
-    .getResultList();
+    "ORDER BY AVG(e.salary) DESC",
+    Object[].class
+)
+.getResultList();
 
-// 3. Subquery trong HQL
+// 3. Subquery
 List<Employee> highEarners = entityManager.createQuery(
-    "SELECT e FROM Employee e WHERE e.salary > (SELECT AVG(emp.salary) FROM Employee emp)", 
-    Employee.class)
-    .getResultList();
+    "SELECT e " +
+    "FROM Employee e " +
+    "WHERE e.salary > (" +
+    "    SELECT AVG(emp.salary) " +
+    "    FROM Employee emp" +
+    ")",
+    Employee.class
+)
+.getResultList();
 ```
 
----
+### 1. Projection
 
+Chỉ lấy những field cần thiết thay vì load toàn bộ `Employee`:
+
+```text
+Employee
+   ↓
+SELECT name, salary
+   ↓
+Object[]
+```
+
+Ví dụ:
+
+```java
+SELECT e.name, e.salary
+FROM Employee e
+```
+
+Kết quả mỗi dòng có thể được biểu diễn dưới dạng:
+
+```text
+["Nguyen Van A", 50000]
+["Tran Van B", 60000]
+```
+
+### 2. Aggregation + GROUP BY + HAVING
+
+Dùng các hàm tổng hợp như:
+
+```text
+COUNT()
+AVG()
+SUM()
+MIN()
+MAX()
+```
+
+Ví dụ:
+
+```java
+SELECT e.department.name,
+       COUNT(e),
+       AVG(e.salary)
+FROM Employee e
+GROUP BY e.department.name
+HAVING COUNT(e) >= 5
+ORDER BY AVG(e.salary) DESC
+```
+
+→ Thống kê số nhân viên và mức lương trung bình theo từng phòng ban.
+
+### 3. Subquery
+
+Subquery là một query nằm bên trong một query khác.
+
+Ví dụ:
+
+```java
+WHERE e.salary > (
+    SELECT AVG(emp.salary)
+    FROM Employee emp
+)
+```
+
+→ Lấy những nhân viên có mức lương **cao hơn mức lương trung bình của toàn bộ nhân viên**.
+
+> **Cách nhớ:**
+> `SELECT` → chọn dữ liệu
+> `GROUP BY` → gom nhóm
+> `HAVING` → lọc sau khi gom nhóm
+> `ORDER BY` → sắp xếp
+> `Subquery` → query nằm bên trong query khác
+
+---
 ## 5. Chiến lược tối ưu tổng thể (Cheatsheet)
 
+```text
+                         Cần đọc dữ liệu từ DB
+                                  │
+                  ┌───────────────┴───────────────┐
+                  ▼                               ▼
+          Chỉ cần HIỂN THỊ                 Cần UPDATE sau khi đọc
+       (Read-Only / API / Report)              (Business Logic)
+                  │                               │
+                  ▼                               ▼
+          DTO Projection                   FetchType.LAZY
+       (SELECT new MyDTO(...))                    │
+                                                  ▼
+                                    Cần nạp quan hệ liên quan?
+                                                  │
+                               ┌──────────────────┴──────────────────┐
+                               ▼                                     ▼
+                        Quan hệ cần fetch                  Nhiều entity cần
+                         ngay trong query?                lazy loading?
+                               │                                     │
+                               ▼                                     ▼
+                         JOIN FETCH                           @BatchSize
+                               │
+                               │
+                               └──────────────┐
+                                              ▼
+                                        EntityGraph
 ```
-                       Cần đọc dữ liệu từ DB
-                                │
-                 ┌──────────────┴──────────────┐
-                 ▼                             ▼
-       Mục đích chỉ để HIỂN THỊ          Cần UPDATE sau khi đọc
-         (Read-Only / API / Report)           (Business Logic)
-                 │                             │
-                 ▼                             ▼
-          DTO Projection                FetchType.LAZY mặc định
-     (SELECT new MyDTO(...))                   │
-                                               ▼
-                                   Cần nạp quan hệ liên quan?
-                                               │
-                                 ┌─────────────┴─────────────┐
-                                 ▼                           ▼
-                           Quan hệ đơn lẻ              Collection lớn
-                           (@ManyToOne)                (@OneToMany)
-                                 │                           │
-                                 ▼                           ▼
-                            JOIN FETCH                  EntityGraph
-                                hoặc                        hoặc
-                            EntityGraph                  @BatchSize
-```
+
+### Nguyên tắc lựa chọn
+
+| Use Case                                  | Giải pháp phù hợp  |
+| ----------------------------------------- | ------------------ |
+| Read-Only / API / Report                  | **DTO Projection** |
+| Cần entity để xử lý Business Logic        | **Entity + LAZY**  |
+| Biết rõ association cần fetch trong query | **JOIN FETCH**     |
+| Muốn thay đổi fetch plan theo use case    | **EntityGraph**    |
+| Có nhiều lazy association cần load        | **@BatchSize**     |
 
 ---
 
-## Tóm tắt & Điểm cốt lõi
-
 <Cards>
-  <Card title="Luôn dùng LAZY" icon={<Layers className="text-blue-500" />}>
-    Thiết lập `FetchType.LAZY` làm tiêu chuẩn cho mọi quan hệ. Không bao giờ phụ thuộc vào `EAGER`.
-  </Card>
-  <Card title="JOIN FETCH & EntityGraph" icon={<Zap className="text-green-500" />}>
-    Sử dụng `JOIN FETCH` hoặc JPA `EntityGraph` để nạp dữ liệu động theo từng nhu cầu sử dụng cụ thể, triệt tiêu N+1 Query.
-  </Card>
-  <Card title="DTO Projection cho Read" icon={<TrendingUp className="text-amber-500" />}>
-    Tận dụng Constructor Projection (`new MyDTO(...)`) cho các luồng Read-Only để đạt hiệu năng tối đa và giảm tải RAM.
-  </Card>
+
+<Card title="Ưu tiên LAZY" icon={<Layers className="text-blue-500" />}>
+
+Ưu tiên thiết lập `FetchType.LAZY` cho các association và chủ động quyết định dữ liệu cần fetch theo từng use case.
+
+Đặc biệt, không nên mặc định dựa vào `EAGER` để giải quyết vấn đề fetching.
+
+</Card>
+
+<Card title="JOIN FETCH & EntityGraph" icon={<Zap className="text-green-500" />}>
+
+Sử dụng `JOIN FETCH` hoặc JPA `EntityGraph` để chủ động nạp association theo nhu cầu của từng use case và tránh N+1 khi phù hợp.
+
+`JOIN FETCH` phù hợp khi fetch plan được thể hiện trực tiếp trong query; `EntityGraph` phù hợp khi muốn tách fetch plan khỏi câu JPQL/HQL.
+
+</Card>
+
+<Card title="DTO Projection cho Read" icon={<TrendingUp className="text-amber-500" />}>
+
+Sử dụng DTO Projection (`new MyDTO(...)`) cho các luồng Read-Only khi chỉ cần một phần dữ liệu.
+
+Cách này giúp chỉ lấy các cột cần thiết và tránh phải quản lý toàn bộ entity cho use case đọc dữ liệu.
+
+</Card>
+
 </Cards>
