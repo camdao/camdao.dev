@@ -1,6 +1,6 @@
 ---
 title: "04. Hibernate Locking: Kiểm soát tranh chấp với Optimistic và Pessimistic Lock"
-description: "Giải quyết triệt để bài toán Lost Update và tranh chấp dữ liệu đồng thời trong Hibernate bằng Optimistic Locking (@Version) và Pessimistic Locking (SELECT FOR UPDATE)."
+description: "Giải quyết bài toán Lost Update và tranh chấp dữ liệu đồng thời trong Hibernate bằng Optimistic Locking (@Version) và Pessimistic Locking (SELECT ... FOR UPDATE)."
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
@@ -36,14 +36,13 @@ sequenceDiagram
 ```
 
 Kết quả mong đợi: `100 - 10 - 20 = 70`.  
-Kết quả thực tế: `80` $\to$ **Toàn bộ cập nhật của User A bị mất hoàn toàn (Lost Update)**.
+Kết quả thực tế: `80` ->  **Toàn bộ cập nhật của User A bị mất hoàn toàn (Lost Update)**.
 
 ---
-
 ## 2. Optimistic Locking (Khóa lạc quan) với `@Version`
+Optimistic Locking **không khóa bản ghi trước khi đọc**. Thay vào đó, nó giả định rằng xung đột ít xảy ra và chỉ kiểm tra xung đột **tại thời điểm ghi (`UPDATE`/`DELETE`)**.
 
-### Bản chất:
-Optimistic Locking **không khóa bất kỳ bản ghi nào trong Database trước**. Thay vào đó, nó giả định rằng xung đột rất hiếm khi xảy ra và chỉ kiểm tra tính toàn vẹn tại thời điểm ghi (`UPDATE`).
+Hibernate/JPA thường sử dụng `@Version` để thực hiện cơ chế này.
 
 ```java
 @Entity
@@ -54,90 +53,266 @@ public class Product {
     private Long id;
 
     private String name;
+
     private Integer stock;
 
     @Version
-    private Long version; // Cột kiểm soát phiên bản tự động
+    private Long version; // Cột kiểm soát phiên bản
 }
+```
+Giả sử ban đầu:
+
+```text
+Product
+id      = 1
+stock   = 100
+version = 1
 ```
 
 ```mermaid
 sequenceDiagram
     autonumber
+
     actor A as Transaction A
     participant DB as Database (id=1, version=1)
     actor B as Transaction B
 
-    A->>DB: Đọc Product (version = 1)
-    B->>DB: Đọc Product (version = 1)
+    A->>DB: Đọc Product (stock=100, version=1)
+    B->>DB: Đọc Product (stock=100, version=1)
 
-    B->>DB: UPDATE products SET stock=80, version=2 WHERE id=1 AND version=1
-    Note right of DB: B cập nhật thành công (Rows affected = 1). DB version = 2.
+    B->>DB: UPDATE stock=80, version=2 WHERE id=1 AND version=1
+    Note right of DB: UPDATE thành công<br/>Rows affected = 1<br/>version: 1 → 2
 
-    A->>DB: UPDATE products SET stock=90, version=2 WHERE id=1 AND version=1
-    Note right of DB: Rows affected = 0! (DB hiện tại đã là version 2)
-    DB-->>A: Trả về 0 row update
-    Note over A: Hibernate ném OptimisticLockException!
+    A->>DB: UPDATE stock=90, version=2 WHERE id=1 AND version=1
+    Note right of DB: UPDATE thất bại<br/>Rows affected = 0<br/>DB hiện tại version=2
+
+    DB-->>A: Hibernate phát hiện Optimistic Lock conflict
+    Note over A: Ném OptimisticLockException
 ```
 
-### Cơ chế hoạt động:
-1. Khi nạp Entity, Hibernate ghi nhớ giá trị `version` hiện tại.
-2. Khi sinh câu lệnh SQL `UPDATE`, Hibernate tự động thêm điều kiện:
-   ```sql
-   UPDATE products 
-   SET stock = ?, version = version + 1 
-   WHERE id = ? AND version = ?;
-   ```
-3. Nếu `Rows affected == 0`, Hibernate biết dữ liệu đã bị transaction khác sửa trước đó $\to$ Ném ngoại lệ `OptimisticLockException` (hoặc Spring `ObjectOptimisticLockingFailureException`).
+**1. Khi Entity được load**
+
+Hibernate ghi nhận giá trị `version` hiện tại:
+
+```text
+version = 1
+```
+
+**2. Khi Hibernate thực hiện UPDATE**
+
+Hibernate đưa version cũ vào điều kiện `WHERE`:
+
+```sql
+UPDATE products
+SET stock = ?, version = ?
+WHERE id = ?
+  AND version = ?;
+```
+
+Ví dụ:
+
+```sql
+UPDATE products
+SET stock = 90, version = 2
+WHERE id = 1
+  AND version = 1;
+```
+
+**3. Database kiểm tra `version`**
+
+Nếu database vẫn có:
+
+```text
+version = 1
+```
+
+→ UPDATE thành công:
+
+```text
+Rows affected = 1
+version: 1 → 2
+```
+
+Nếu database đã bị transaction khác cập nhật:
+
+```text
+version = 2
+```
+
+→ Điều kiện `WHERE version = 1` không còn đúng:
+
+```text
+Rows affected = 0
+        ↓
+Hibernate phát hiện conflict
+        ↓
+OptimisticLockException
+```
+
+### Kết quả
+
+Không có Optimistic Locking:
+
+```text
+A đọc 100
+B đọc 100
+
+A → 90
+B → 80
+
+Final = 80 ❌
+→ Lost Update
+```
+
+Có `@Version`:
+
+```text
+A đọc 100, version=1
+B đọc 100, version=1
+
+B → 80, version=2 ✓
+
+A → 90
+WHERE version=1
+       ↓
+DB version=2
+       ↓
+UPDATE thất bại ❌
+       ↓
+OptimisticLockException
+```
 
 ---
-
 ## 3. Pessimistic Locking (Khóa bi quan)
 
-### Bản chất:
-Pessimistic Locking giả định rằng xung đột dữ liệu xảy ra rất thường xuyên. Nó thực hiện **khóa trực tiếp hàng dữ liệu (Row-Level Lock)** ngay khi đọc từ Database, bắt các transaction khác muốn ghi/sửa phải **chờ đợi (block)**.
+Pessimistic Locking giả định rằng **xung đột dữ liệu có khả năng xảy ra**, vì vậy transaction sẽ **yêu cầu Database đặt lock lên dữ liệu** trong quá trình truy cập.
+
+Với `PESSIMISTIC_WRITE`, các transaction khác muốn thực hiện thao tác xung đột trên cùng row có thể phải **chờ (block)** hoặc nhận lỗi/timeout tùy Database và cấu hình.
 
 ```java
-// Khóa độc quyền (Exclusive Lock) ngay khi đọc
+// Yêu cầu khóa ghi ngay khi đọc
 Product product = entityManager.find(
-    Product.class, 
-    productId, 
+    Product.class,
+    productId,
     LockModeType.PESSIMISTIC_WRITE
 );
 ```
 
-Hibernate sẽ sinh câu lệnh SQL tương ứng với cơ chế khóa của RDBMS:
+Hibernate sẽ tạo SQL tương ứng với cơ chế locking của RDBMS. Với nhiều Database, nó có thể tương đương:
+
 ```sql
-SELECT id, name, stock 
-FROM products 
-WHERE id = 1 
-FOR UPDATE; -- Khóa độc quyền cấp row
+SELECT id, name, stock
+FROM products
+WHERE id = 1
+FOR UPDATE;
 ```
+
+`FOR UPDATE` thường yêu cầu Database giữ **row-level lock** cho đến khi transaction kết thúc.
 
 ```mermaid
 sequenceDiagram
     autonumber
+
     actor A as Transaction A
     participant DB as Database (Row-Level Lock)
     actor B as Transaction B
 
     A->>DB: SELECT ... WHERE id=1 FOR UPDATE
-    Note right of DB: 🔒 Row id=1 bị khóa bởi Transaction A
-    
+    Note right of DB: 🔒 Row id=1 được lock bởi A
+
     B->>DB: SELECT ... WHERE id=1 FOR UPDATE
-    Note over B: ⏳ Bị BLOCK (Phải chờ A hoàn tất hoặc timeout)
+    Note over B: ⏳ B phải chờ A<br/>hoặc gặp timeout tùy cấu hình
 
-    A->>DB: UPDATE stock = 90 & COMMIT
-    Note right of DB: 🔓 Row id=1 được giải phóng lock
+    A->>DB: UPDATE stock = 90
+    A->>DB: COMMIT
+    Note right of DB: 🔓 Lock được giải phóng
 
-    DB-->>B: B tiếp tục chạy và đọc được stock mới nhất = 90
-    B->>DB: UPDATE stock = 70 & COMMIT
+    DB-->>B: B tiếp tục
+    B->>DB: Đọc stock = 90
+    B->>DB: UPDATE stock = 70
+    B->>DB: COMMIT
 ```
 
-### Các chế độ Pessimistic Lock phổ biến:
-- **`PESSIMISTIC_WRITE`** (Khuyên dùng nhất): Tương đương `SELECT ... FOR UPDATE`. Ngăn các transaction khác đọc khóa hoặc cập nhật bản ghi.
-- **`PESSIMISTIC_READ`**: Tương đương `SELECT ... LOCK IN SHARE MODE` (Shared Lock). Cho phép các bên cùng đọc nhưng ngăn chặn cập nhật.
-- **`PESSIMISTIC_FORCE_INCREMENT`**: Khóa row đồng thời tự động tăng cột `@Version` ngay cả khi dữ liệu của entity cha không đổi.
+### Các chế độ Pessimistic Lock phổ biến
+
+#### `PESSIMISTIC_WRITE`
+
+Yêu cầu **lock để ghi** trên Entity.
+
+Thường được Database triển khai bằng cơ chế tương đương:
+
+```sql
+SELECT ...
+FROM products
+WHERE id = ?
+FOR UPDATE;
+```
+
+Transaction khác muốn thực hiện thao tác xung đột trên row có thể phải chờ lock được giải phóng.
+
+> **Dùng khi:** dữ liệu quan trọng và xung đột đồng thời có khả năng xảy ra thường xuyên.
+
+---
+
+#### `PESSIMISTIC_READ`
+
+Yêu cầu **lock để đọc**.
+
+Mục tiêu là cho phép transaction đọc dữ liệu trong khi hạn chế các thao tác ghi xung đột từ transaction khác.
+
+SQL thực tế **phụ thuộc vào RDBMS**, không nên cố định rằng mọi Database đều sử dụng:
+
+```sql
+SELECT ...
+FROM products
+WHERE id = ?
+LOCK IN SHARE MODE;
+```
+
+Ví dụ một số Database có thể sử dụng cơ chế shared lock khác nhau.
+
+> **Dùng khi:** cần đảm bảo dữ liệu không bị thay đổi bởi transaction khác trong khoảng thời gian đang đọc.
+
+---
+
+#### `PESSIMISTIC_FORCE_INCREMENT`
+
+Kết hợp **pessimistic locking** với việc **tăng `@Version`**.
+
+```java
+Product product = entityManager.find(
+    Product.class,
+    productId,
+    LockModeType.PESSIMISTIC_FORCE_INCREMENT
+);
+```
+
+Entity sẽ được lock theo pessimistic locking và version được tăng lên.
+
+> **Dùng khi:** hệ thống vừa cần pessimistic lock vừa muốn sử dụng version để phát hiện thay đổi đồng thời.
+
+### Optimistic vs Pessimistic
+
+```text
+Optimistic Locking
+        │
+        ├── Không lock row trước
+        ├── @Version
+        ├── Phát hiện conflict khi ghi
+        └── Conflict → OptimisticLockException
+
+
+Pessimistic Locking
+        │
+        ├── Yêu cầu Database lock
+        ├── PESSIMISTIC_WRITE
+        ├── SELECT ... FOR UPDATE
+        └── Transaction khác có thể phải chờ
+```
+
+> **Cách nhớ:**
+> **Optimistic** → *"Cứ làm đi, lúc ghi kiểm tra xem có ai sửa chưa."*
+> **Pessimistic** → *"Tôi lấy lock trước, người khác muốn sửa thì chờ."*
 
 ---
 
@@ -185,17 +360,3 @@ public class StockService {
 ```
 
 ---
-
-## Tóm tắt & Điểm cốt lõi
-
-<Cards>
-  <Card title="@Version là mặc định" icon={<ShieldAlert className="text-green-500" />}>
-    Hầu hết các Entity quan trọng nên có `@Version` để ngăn ngừa triệt để lỗi Lost Update mà không tốn chi phí khóa DB.
-  </Card>
-  <Card title="Pessimistic cho Tiền & Vé" icon={<Lock className="text-amber-500" />}>
-    Sử dụng `PESSIMISTIC_WRITE` cho các giao dịch nhạy cảm về số dư tài chính hoặc tồn kho có tính cạnh tranh khốc liệt.
-  </Card>
-  <Card title="Tránh Deadlock" icon={<AlertTriangle className="text-rose-500" />}>
-    Khi dùng Pessimistic Lock trên nhiều bản ghi, luôn khóa theo một thứ tự ID nhất quán để tránh hiện tượng Deadlock vòng lặp.
-  </Card>
-</Cards>
