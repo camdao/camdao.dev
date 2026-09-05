@@ -517,3 +517,263 @@ Cách này giúp chỉ lấy các cột cần thiết và tránh phải quản l
 </Card>
 
 </Cards>
+
+## 5. Sử dụng `@Query` trong Spring Data JPA
+
+Trong Spring Data JPA, nếu query đơn giản, Spring có thể tự tạo query từ tên method:
+
+```java
+List<User> findByUsername(String username);
+```
+
+Khi query phức tạp hơn hoặc muốn chủ động viết query, có thể sử dụng annotation **`@Query`**.
+
+`@Query` cho phép khai báo query tùy chỉnh. Query có thể là **JPQL** hoặc **Native SQL** tùy cách sử dụng.
+
+### 5.1. `@Query` với JPQL
+
+JPQL (Java Persistence Query Language) là ngôn ngữ truy vấn chuẩn của JPA, làm việc với **Entity và thuộc tính của Entity** thay vì Table và Column trong Database.
+
+Ví dụ:
+
+```java
+package com.example.demo.repository;
+
+import com.example.demo.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+
+    @Query("""
+        SELECT u
+        FROM User u
+        WHERE u.username = :username
+        """)
+    List<User> findByUsernameCustom(
+        @Param("username") String username
+    );
+
+    @Query("""
+        SELECT u
+        FROM User u
+        WHERE u.username = :username
+        AND u.password = :password
+        """)
+    List<User> findByUsernameAndPasswordCustom(
+        @Param("username") String username,
+        @Param("password") String password
+    );
+
+    @Query("""
+        SELECT COUNT(u)
+        FROM User u
+        WHERE u.username = :username
+        """)
+    Long countByUsernameCustom(
+        @Param("username") String username
+    );
+}
+```
+
+### Giải thích
+
+```java
+SELECT u
+FROM User u
+WHERE u.username = :username
+```
+
+Ở đây:
+
+```text
+User
+   ↓
+Entity User
+
+u.username
+   ↓
+Field username của Entity
+
+:username
+   ↓
+Parameter được truyền vào method
+```
+
+Ví dụ:
+
+```java
+findByUsernameCustom("admin");
+```
+
+`@Param("username")` sẽ truyền giá trị `"admin"` vào:
+
+```text
+:username
+```
+
+### Luồng xử lý
+
+```text
+Spring Data JPA
+      ↓
+    @Query
+      ↓
+     JPQL
+      ↓
+   Hibernate
+      ↓
+      SQL
+      ↓
+   Database
+```
+
+> **Cách nhớ:**
+> `@Query` là annotation của Spring Data JPA.
+> Nội dung bên trong `@Query` có thể là JPQL hoặc Native SQL.
+
+---
+
+## 6. Native Query
+
+**Native Query** là câu SQL được viết trực tiếp theo cú pháp của Database.
+
+Trong Spring Data JPA, sử dụng:
+
+```java
+@Query(
+    value = "...",
+    nativeQuery = true
+)
+```
+
+Ví dụ:
+
+```java
+package com.example.demo.repository;
+
+import com.example.demo.entity.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+
+public interface UserRepository extends JpaRepository<User, Long> {
+
+    @Query(
+        value = """
+            SELECT *
+            FROM users
+            WHERE username = :username
+            """,
+        nativeQuery = true
+    )
+    List<User> findByUsernameNative(
+        @Param("username") String username
+    );
+
+    @Query(
+        value = """
+            SELECT *
+            FROM users
+            WHERE username = :username
+            AND password = :password
+            """,
+        nativeQuery = true
+    )
+    List<User> findByUsernameAndPasswordNative(
+        @Param("username") String username,
+        @Param("password") String password
+    );
+
+    @Query(
+        value = """
+            SELECT COUNT(*)
+            FROM users
+            WHERE username = :username
+            """,
+        nativeQuery = true
+    )
+    Long countByUsernameNative(
+        @Param("username") String username
+    );
+}
+```
+
+### JPQL vs Native SQL
+
+JPQL:
+
+```java
+@Query("""
+    SELECT u
+    FROM User u
+    WHERE u.username = :username
+    """)
+```
+
+→ Làm việc với:
+
+```text
+Entity: User
+Field:  username
+```
+
+Native SQL:
+
+```java
+@Query(
+    value = """
+        SELECT *
+        FROM users
+        WHERE username = :username
+        """,
+    nativeQuery = true
+)
+```
+
+→ Làm việc với:
+
+```text
+Table:  users
+Column: username
+```
+
+Có thể nhớ:
+
+```text
+              @Query
+                 │
+        ┌────────┴────────┐
+        ▼                 ▼
+      JPQL            Native SQL
+        │                 │
+ Entity / Field      Table / Column
+        │                 │
+        └────────┬────────┘
+                 ▼
+             Hibernate
+                 ↓
+                SQL
+                 ↓
+             Database
+```
+
+### Khi nào dùng?
+
+| Trường hợp                              | Nên dùng                            |
+| --------------------------------------- | ----------------------------------- |
+| Query đơn giản                          | Derived Query `findBy...`           |
+| Query tùy chỉnh                         | `@Query` + JPQL                     |
+| Muốn truy vấn Entity/Association        | JPQL                                |
+| SQL đặc thù Database                    | Native Query                        |
+| Cần tính năng SQL mà JPQL không phù hợp | Native Query                        |
+| Query động, phức tạp                    | Specification / Criteria / QueryDSL |
+
+> ⚠️ Native Query phụ thuộc nhiều hơn vào Database cụ thể. Khi sử dụng Native SQL, bạn phải quan tâm đến tên table, column và cú pháp SQL của Database đang dùng.
+
+---
