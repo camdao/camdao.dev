@@ -11,6 +11,8 @@
     "ticket-project",
     "ticket-project/lua-seat",
     "---Aws---",
-    "fcj-workshop"
+    "fcj-workshop",
+    "---Cloud Thinker---",
+    "cloud-thinker"
   ]
 }

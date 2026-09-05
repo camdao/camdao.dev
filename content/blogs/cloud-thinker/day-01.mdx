@@ -1,0 +1,225 @@
+---
+title: "Day 01: Tại sao AI Agent gặp khó khăn trên Cloud?"
+description: "nguyên nhân cốt lõi khiến AI Coding Agent chạy rất tốt khi làm việc trên local repository, nhưng khi tác động lên Cloud lại có thể thất bại hoặc tạo ra rủi ro nghiêm trọng."
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { ShieldAlert, Terminal, Cloud, Cpu, Layers, CheckCircle2, AlertTriangle, Lock, UserCheck, Search, FileText } from 'lucide-react';
+
+Nhiều kỹ sư khi xây dựng hoặc tích hợp **AI Agent** vào quy trình phát triển phần mềm thường gặp một vấn đề quen thuộc: **Agent vượt qua toàn bộ test suite và hoạt động rất tốt trong Local Repository, nhưng khi đưa lên môi trường Cloud lại hoạt động sai, bị giới hạn quyền truy cập, hoặc thậm chí tạo ra những rủi ro bảo mật nghiêm trọng.**
+
+Sự khác biệt cốt lõi không nằm ở việc Model thông minh hay kém thông minh, mà nằm ở **bản chất của môi trường thực thi**. Bài viết này sẽ làm rõ 5 ý tưởng nền tảng giúp bạn hiểu được sự khác biệt giữa Local và Cloud, cũng như cách kiểm soát Agent một cách an toàn.
+
+---
+## 1. Agent là sự kết hợp giữa Model và Môi trường
+
+Một **AI Agent** không phải là một thực thể độc lập có thể tự vận hành mọi thứ. Về mặt kiến trúc, Agent là sự kết hợp giữa **Model** và **Môi trường**, cùng với **Mục tiêu, Ngữ cảnh** và **Công cụ**.
+
+Vòng lặp cơ bản của Agent:
+
+1. **Model** nhận Context và Goal.
+2. **Model** lựa chọn hành động tiếp theo: gọi Tool nào và với tham số gì.
+3. **Môi trường** thực thi hành động và trả về kết quả (**Observation**).
+4. **Model** phân tích kết quả, xác định công việc đã hoàn thành hay chưa, sau đó quyết định dừng lại hoặc tiếp tục.
+
+### Phân định trách nhiệm giữa Model và Môi trường
+
+| Quyết định từ Model                       | Quy định bởi Môi trường                                             |
+| :---------------------------------------- | :------------------------------------------------------------------ |
+| Tool nào sẽ được gọi tiếp theo?           | Những công cụ/API nào thực sự khả dụng?                             |
+| Tham số đầu vào (payload) là gì?          | Lệnh thực thi tạo ra kết quả và thay đổi trạng thái như thế nào?    |
+| Phân tích kết quả trả về như thế nào?     | Hành động có thể được hoàn tác (Undo/Rollback) hay không?           |
+| Khi nào công việc được coi là hoàn thành? | Quyền hạn thực tế (Permissions) có cho phép hành động đó hay không? |
+
+<Callout type="warn">
+
+Một Model tiên tiến có thể đưa ra kế hoạch tối ưu, nhưng vẫn hoàn toàn bất lực nếu môi trường không cấp đủ quyền cần thiết. Ngược lại, nếu Agent được cấp **quá nhiều quyền (Over-privileged)**, một quyết định sai lầm của Model có thể dẫn đến thiệt hại thực tế trên hạ tầng Cloud.
+
+</Callout>
+
+---
+
+## 2. Cloud không có ranh giới Workspace duy nhất như Local Repo
+
+Khi Agent hoạt động trong một repository trên máy cá nhân, **phạm vi hoạt động tương đối rõ ràng**. Tuy nhiên, trên Cloud, ranh giới này bị phân tán qua nhiều **Account, Region, VPC và IAM Role**, khiến phạm vi mà Agent có thể nhìn thấy và tác động trở nên phức tạp hơn.
+
+### So sánh ranh giới: Local Repo vs Cloud
+
+| Tiêu chí                 | Local Repository                                               | Môi trường Cloud                                                                                 |
+| :----------------------- | :------------------------------------------------------------- | :----------------------------------------------------------------------------------------------- |
+| **Ranh giới (Boundary)** | Một workspace trên máy cá nhân.                                | Nhiều Account, Region, VPC và IAM Role.                                                          |
+| **Phạm vi ảnh hưởng**    | Chủ yếu ảnh hưởng đến môi trường local cho đến khi `git push`. | Có thể ảnh hưởng trực tiếp đến người dùng và các hệ thống khác.                                  |
+| **Tầm nhìn của Agent**   | Có thể truy cập các file trong workspace được cấp quyền.       | Chỉ nhìn thấy những tài nguyên mà IAM Role cho phép truy cập.                                    |
+| **Khả năng Undo**        | Tương đối dễ với Git như `checkout`, `reset`, `revert`.        | Nhiều thao tác có thể khó hoặc không thể hoàn tác, chẳng hạn xóa database hoặc thay đổi network. |
+
+<Callout type="error">
+
+**Hiện tượng mù tài nguyên:** Khi Agent báo cáo *"Resource X không tồn tại"*, điều đó không nhất thiết có nghĩa tài nguyên thực sự không tồn tại trên Cloud. Agent có thể không có quyền truy cập, dẫn đến `AccessDenied` hoặc nhận về danh sách rỗng từ API.
+
+</Callout>
+
+### Không phó mặc an toàn cho Prompt
+
+Không nên chỉ dựa vào Prompt như *"Hãy cẩn thận, đừng xóa database"* để kiểm soát Agent.
+
+Thay vào đó, cần xây dựng các **rào cản kỹ thuật** bên ngoài Agent, chẳng hạn **IAM Policy, Service Control Policies (SCPs), Guardrails và Approval Gates**, nhằm giới hạn những hành động Agent thực sự có thể thực hiện.
+
+---
+## 3. Chế độ tự động (Auto Mode) vẫn cần con người tham gia
+
+Nhiều AI Coding Agent hiện nay hỗ trợ **Auto Mode**: thay vì dừng lại để hỏi người dùng trước mỗi lệnh terminal hoặc API, một **Reviewer Model** sẽ đánh giá mức độ an toàn của action và tự động cho phép nếu thấy phù hợp.
+
+Cơ chế này có thể hoạt động tốt ở local, nhưng tiềm ẩn nhiều rủi ro khi chạy trên Cloud vì dễ tạo ra giả định rằng **luôn có con người đang giám sát**.
+
+<Callout type="info">
+
+### Khi có người trực tiếp Prompting
+
+Kỹ sư liên tục theo dõi Agent. Khi Agent đề xuất một lệnh nguy hiểm hoặc cần xác nhận, con người có thể đánh giá ngữ cảnh và **cho phép hoặc chặn hành động ngay lập tức**.
+
+</Callout>
+
+<Callout type="warn">
+
+### Khi không có người giám sát (Unattended)
+
+Ví dụ, một sự cố xảy ra lúc 3:00 AM và Agent tự động được kích hoạt để xử lý. Nếu boundary không được xác định rõ ràng, Reviewer Model chỉ có thể dựa vào các rule mặc định. Khi Agent cần phê duyệt nhưng không có ai phản hồi, hệ thống có thể bị đình trệ hoặc thực hiện **fallback ngoài dự kiến**.
+
+</Callout>
+
+
+<Callout type="info">
+
+**Nguyên tắc vận hành:** Khi không có con người trực tiếp giám sát (**Unattended Mode**), Agent phải được đặt sẵn các giới hạn rõ ràng để biết **được làm gì, không được làm gì và khi nào phải dừng lại**.
+
+| Thành phần         | Agent cần biết                                   |
+| :----------------- | :----------------------------------------------- |
+| **Runbook**        | Phải làm gì khi có sự cố?                        |
+| **Boundary**       | Được phép thao tác trong phạm vi nào?            |
+| **Permission**     | Thực sự được phép thực hiện những hành động nào? |
+| **Human Approval** | Hành động nào bắt buộc phải có người xác nhận?   |
+| **Audit Log**      | Đã thực hiện những hành động nào?                |
+
+Ví dụ: Agent được phép **restart ECS service**, nhưng không được phép **xóa RDS**. Nếu muốn thực hiện một hành động nguy hiểm như xóa database, Agent phải dừng lại và yêu cầu con người phê duyệt.
+
+> **Auto Mode có thể tự động thực hiện việc phê duyệt, nhưng không thể tự quyết định thay con người về mục tiêu và giới hạn của hệ thống.**
+
+</Callout>
+
+---
+## 4. Công cụ được thực thi qua nhiều lớp phòng vệ
+
+Khi Agent muốn thực hiện một hành động trên Cloud, request không đi thẳng từ **Agent → Cloud**. Nó phải đi qua nhiều lớp kiểm soát trước khi có thể thay đổi tài nguyên thực tế.
+
+Mỗi lớp có nhiệm vụ bảo vệ khác nhau và cũng có **giới hạn riêng**. Một lớp có thể chặn được hành động, nhưng không có nghĩa nó nhìn thấy toàn bộ rủi ro của hành động đó.
+
+### Các lớp bảo vệ
+
+| Lớp                       | Vai trò                                                     | Giới hạn                                                               |
+| :------------------------ | :---------------------------------------------------------- | :--------------------------------------------------------------------- |
+| **1. Agent**              | Phân tích yêu cầu và đề xuất action cần thực hiện.          | Không tự biết chính xác quyền hạn trên Cloud.                          |
+| **2. Sandbox**            | Cách ly Agent, hạn chế ảnh hưởng đến máy local.             | Chỉ bảo vệ môi trường local, **không bảo vệ tài khoản Cloud**.         |
+| **3. Permission Mode**    | Giới hạn những Tool mà Agent được phép sử dụng.             | Không nhất thiết hiểu được tác động thực tế của từng tham số.          |
+| **4. Intent & Guardrail** | Kiểm tra mục tiêu và giới hạn mà Agent được phép thực hiện. | Phải được thiết lập rõ ràng từ trước.                                  |
+| **5. Cloud IAM**          | Quyết định Agent thực sự được phép làm gì trên Cloud.       | Cần cấu hình quyền theo nguyên tắc **Least Privilege**.                |
+| **6. Cloud Resource**     | Thực hiện request nếu tất cả điều kiện và quyền đều hợp lệ. | Trạng thái tài nguyên có thể thay đổi ngay sau khi request thành công. |
+
+### Ví dụ
+
+Agent muốn xóa một S3 bucket:
+
+```text
+Agent đề xuất: Delete S3 Bucket
+        ↓
+Sandbox: Cho phép
+        ↓
+Permission Mode: Cho phép Tool
+        ↓
+Guardrail: Kiểm tra Boundary
+        ↓
+IAM: Có quyền DeleteBucket?
+        ↓
+    ┌───┴───┐
+   Có      Không
+    ↓        ↓
+ Xóa       DENY
+```
+
+Điểm quan trọng là **không phải lớp nào cũng bảo vệ được Cloud**.
+
+<Callout type="warn">
+
+**Sandbox chủ yếu bảo vệ môi trường thực thi của Agent; IAM và Cloud Policy mới là lớp kiểm soát quyền trên Cloud.**
+
+Vì vậy, không nên nghĩ rằng Agent chạy trong Sandbox thì tài khoản AWS cũng an toàn.
+
+</Callout>
+
+## 5. Mọi nhận định về Cloud đều cần Nguồn, Phạm vi và Thời gian
+
+Khi Agent làm việc với Cloud, không phải mọi câu trả lời của Model đều là sự thật. Model có thể **suy đoán, hallucinate hoặc sử dụng dữ liệu đã cũ**.
+
+Vì vậy, với mỗi nhận định về Cloud, cần trả lời được 3 câu hỏi:
+
+| Câu hỏi              | Ý nghĩa                                                                  |
+| :------------------- | :----------------------------------------------------------------------- |
+| **Source – Nguồn**   | Thông tin này đến từ API hoặc Tool call nào? Có bằng chứng cụ thể không? |
+| **Scope – Phạm vi**  | Thông tin này áp dụng cho Account, Region và IAM Role nào?               |
+| **Time – Thời gian** | Dữ liệu được kiểm tra vào thời điểm nào?                                 |
+
+### Phân loại các nhận định
+
+Để phân biệt **dữ liệu thực tế** với **suy luận của Model**, có thể chia finding thành 4 loại:
+
+| Nhãn         | Ý nghĩa                                            | Ví dụ                                                        |
+| :----------- | :------------------------------------------------- | :----------------------------------------------------------- |
+| **Verified** | Có API/Tool output trực tiếp chứng minh.           | API xác nhận S3 Bucket đã bật Block Public Access.           |
+| **Inferred** | Được suy luận từ những thông tin đã được xác minh. | Block Public Access được bật → khả năng bucket không public. |
+| **Assumed**  | Model tự suy đoán nhưng chưa có bằng chứng.        | “Bucket này chắc chắn có vấn đề bảo mật.”                    |
+| **Blocked**  | Không thể kiểm tra vì thiếu quyền.                 | API trả về `AccessDenied` khi kiểm tra bucket.               |
+
+<Callout type="info">
+
+**Nguyên tắc quan trọng:** Một finding chỉ đáng tin cậy khi toàn bộ các bước dẫn đến kết luận đều có bằng chứng phù hợp.
+
+Nếu một bước quan trọng chỉ là **giả định chưa được kiểm chứng**, kết luận đó không thể được xem là **Verified**.
+
+Nếu Agent không thể chỉ ra nguồn của thông tin, câu trả lời chính xác nhất là:
+
+**“Not enough evidence.” – Không có đủ bằng chứng.**
+
+</Callout>
+
+---
+
+## Thực hành (Practice Lab · 95 minutes)
+
+Dưới đây là các bước thiết lập và thực hành kết nối AI Agent với môi trường Demo Cloud có áp dụng đầy đủ các tầng kiểm soát an toàn.
+
+<Steps>
+  <Step>
+    ### Bước 1: Mời thành viên nhóm (Invite your team)
+    Thiết lập workspace phân quyền cộng tác cho các thành viên trong đội ngũ kỹ thuật.
+    ![Invite-your-team.png](/images/cloud-thinker/Invite-your-team.png)
+  </Step>
+
+  <Step>
+    ### Bước 2: Kết nối môi trường Demo (Connect to demo environment)
+    Cấu hình kết nối Agent với tài khoản Cloud demo thông qua IAM Role có giới hạn phạm vi (Scoped Role).
+    ![Connect to demo environment](/images/cloud-thinker/Connect.png)
+  </Step>
+
+  <Step>
+    ### Bước 3: Đặt câu hỏi và thẩm định câu trả lời của Agent
+    Thực hiện tương tác với Agent, yêu cầu trích xuất Source, Scope, Time và phân loại nhận định theo các tiêu chuẩn đã học.
+    ![What to ask the agent](/images/cloud-thinker/What-to-ask-the-agent.png)
+  </Step>
+</Steps>
+
+
+## Tài liệu tham khảo
+
+- [Day 01 · Govern](https://docs.cloudthinker.io/learn/workshops/prove-it/day-01-govern#4-one-tool-call-passes-through-many-layers)
