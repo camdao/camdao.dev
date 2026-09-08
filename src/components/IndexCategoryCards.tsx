@@ -1,6 +1,24 @@
 import { Cards, Card } from 'fumadocs-ui/components/card';
 import { source } from '@/lib/source';
 
+function getFirstPage(node: any): { url: string; description?: any } | undefined {
+  if (node.type === 'page') {
+    return { url: node.url, description: node.description };
+  }
+  if (node.type === 'folder') {
+    if (node.index?.url) {
+      return { url: node.index.url, description: node.index.description };
+    }
+    if (Array.isArray(node.children)) {
+      for (const child of node.children) {
+        const page = getFirstPage(child);
+        if (page) return page;
+      }
+    }
+  }
+  return undefined;
+}
+
 export function IndexCategoryCards() {
   const tree = source.getPageTree();
 
@@ -38,13 +56,13 @@ export function IndexCategoryCards() {
           <Cards>
             {group.items.map((item, itemIdx) => {
               if (item.type === 'folder') {
-                const indexPage = item.index;
+                const targetPage = item.index || getFirstPage(item);
                 return (
                   <Card
                     key={itemIdx}
                     title={typeof item.name === 'string' ? item.name : 'Folder'}
-                    description={indexPage ? (indexPage as any).description : undefined}
-                    href={indexPage ? indexPage.url : '#'}
+                    description={targetPage ? (targetPage as any).description : undefined}
+                    href={targetPage ? targetPage.url : '#'}
                   />
                 );
               }
@@ -54,6 +72,7 @@ export function IndexCategoryCards() {
                   <Card
                     key={item.url}
                     title={typeof item.name === 'string' ? item.name : 'Page'}
+                    description={(item as any).description}
                     href={item.url}
                   />
                 );
