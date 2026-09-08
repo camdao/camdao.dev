@@ -2,6 +2,7 @@
   "title": "Ticket Project",
   "icon": "Ticket",
   "pages": [
-    "lua-seat"
+    "lua-seat",
+    "hibernate-retrospective"
   ]
 }
