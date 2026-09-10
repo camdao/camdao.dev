@@ -16,38 +16,70 @@ import Education from "@/components/ui/Education";
 ---
 
 ## 💼 **Career**
-
 ### Backend Developer Intern — CTCP Bến Xe Tàu Phà Cần Thơ
-*06/2026 ~ 08/2026 · Remote*
 
-**Tech stack:** ASP.NET Core · Entity Framework Core · SQL Server · RESTful API · Postman
+**06/2026 ~ 08/2026 · Remote**
 
-- Xây dựng RESTful API với **ASP.NET Core + Entity Framework Core** phục vụ hệ thống nghiệp vụ nội bộ.
-- Implement các chức năng **filtering, pagination và data retrieval**.
-- Xử lý business logic và truy vấn **SQL Server**, bao gồm tổng hợp dữ liệu từ nhiều entity.
-- Sử dụng **Postman và SQL** để kiểm thử, xác minh dữ liệu và debug API.
+**Tech stack:** ASP.NET Core · Entity Framework Core · SQL Server · RESTful API
+
+Trong kỳ thực tập, thực hiện **project backend theo yêu cầu của doanh nghiệp**, tập trung vào xây dựng RESTful API, xử lý business logic và truy xuất dữ liệu. Dự án được sử dụng để đánh giá quá trình phát triển và khả năng áp dụng kiến thức backend.
+
+#### Backend Architecture & API Development
+
+* Phân tích yêu cầu và tổ chức backend theo **Clean Architecture**, phân tách rõ các layer API, business logic và data access.
+* Xây dựng **RESTful API bằng ASP.NET Core**, triển khai các nghiệp vụ dựa trên domain model và quan hệ giữa các entity trong project.
+
+#### Database & Data Processing
+
+* Sử dụng **Entity Framework Core** để thao tác với **SQL Server**, xây dựng truy vấn liên quan đến nhiều entity và các mối quan hệ giữa các bảng.
+* Xử lý **data aggregation và statistics** từ dữ liệu trong database phục vụ các yêu cầu của project.
+
+#### Testing
+
+* Viết **Unit Test** cho các thành phần xử lý business logic, kiểm tra các trường hợp dữ liệu khác nhau và đảm bảo logic hoạt động đúng theo yêu cầu.
 
 ---
 
 ## 🚀 **Personal Experience**
-
 ### Booking Ticket Online (2026.02 ~ 2026.05)
-> Hệ thống đặt vé trực tuyến với xử lý giữ chỗ, thanh toán và kiểm soát đồng thời.
 
-**Tech stack:** Java · Spring Boot · MySQL · Redis · Docker · AWS · VNPay  
+> **Thiết kế và triển khai backend cho hệ thống đặt vé trực tuyến, tập trung vào xử lý giữ ghế, concurrency và thanh toán.**
+
+**Tech stack:** Java · Spring Boot · MySQL · Redis · Docker · AWS · VNPay
+
 **GitHub:** [ticket-online](https://github.com/camdao/ticket-online)
 
-- Xây dựng backend cho hệ thống đặt vé trực tuyến: đặt vé, giữ chỗ và thanh toán.
-- Sử dụng **Redis Distributed Lock** (Redisson) để kiểm soát việc nhiều người dùng cùng chọn một ghế.
-- Áp dụng **TTL** cho ghế đang được giữ để tự động giải phóng khi người dùng không hoàn tất thanh toán.
-- Sử dụng **Redis Lua Script** để thực hiện các thao tác giữ ghế nguyên tử (atomic operations), hạn chế race condition khi có nhiều request đồng thời.
+#### Xử lý concurrency trong quá trình giữ ghế
+
+* Khi nhiều người dùng cùng chọn một ghế trong cùng suất chiếu, hệ thống cần đảm bảo một ghế không bị giữ bởi nhiều request cùng lúc.
+* Sử dụng **Redis Lua Script** để thực hiện kiểm tra và giữ ghế trong một thao tác **atomic**, tránh race condition giữa các request đồng thời.
+* Áp dụng **TTL** cho key giữ ghế để tự động giải phóng ghế khi người dùng không hoàn tất quá trình đặt vé.
+* Bổ sung kiểm tra booking đang hoạt động trong **MySQL** trước khi tạo booking, đồng thời cân nhắc trade-off giữa tính nhất quán và hiệu năng thay vì sử dụng DB pessimistic lock cho toàn bộ luồng.
+
+#### Tối ưu truy vấn và cách làm việc với Hibernate
+
+* Trong quá trình phát triển, rà soát các truy vấn Hibernate/JPA và nhận diện các vấn đề như **N+1 Query** và việc load Entity không cần thiết.
+* Sử dụng **JOIN FETCH và Projection** tùy theo mục đích truy vấn, đặc biệt với các API listing chỉ cần một phần dữ liệu.
+* Từ quá trình này, xây dựng bài viết retrospective về cách lựa chọn chiến lược fetching và projection thay vì áp dụng một kỹ thuật tối ưu cho mọi trường hợp.
+
+#### Triển khai và vận hành
+
+* Containerize backend bằng **Docker** và triển khai ứng dụng lên **AWS EC2**.
+* Sử dụng **Nginx** làm reverse proxy, cấu hình HTTPS cho backend API.
+* Xây dựng quy trình **CI/CD** để tự động build Docker image và triển khai ứng dụng lên server.
+* Bổ sung monitoring với **Spring Boot Actuator, Prometheus và Grafana** để theo dõi trạng thái và metric của ứng dụng.
+
+#### Bài viết liên quan
+
+* [Redis Lua Script — Thiết kế cơ chế giữ ghế atomic](https://camdao-dev.vercel.app/blogs/ticket-project/lua-seat)
+* [Hibernate Retrospective — Nhìn lại cách sử dụng JPA/Hibernate](https://camdao-dev.vercel.app/blogs/ticket-project/hibernate-retrospective)
 
 ---
 
 ## 🛠️ **Available Skills**
 
 - **Front-End:** JavaScript, TypeScript, React.js, Next.js, React Query
-- **Back-End:** Java (Spring Boot, Spring Data JPA, Spring Security, Spring WebFlux), C# (.NET Core), Node.js
+- **Back-End:** Java, Spring Boot, Spring Data JPA, Spring Security
 - **AWS:** EC2, S3, Lambda, CloudFront, RDS, Route53, IAM, ECS Fargate, ECR, ALB
 - **Database:** MySQL, PostgreSQL, SQL Server, Redis
 - **DevOps & Tools:** Docker, Docker Compose, Nginx, GitHub Actions, Git
