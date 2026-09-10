@@ -1,8 +1,16 @@
 {
-  "title": "Workshop Aws Cloud",
-  "icon": "BicepsFlexed",
+  "title": "FCJ Workshop Intern",
+    "icon": "BicepsFlexed",
 
   "pages": [
-    "work-shop-1"
+    "--- Workshop Overview ---",
+    "overview",
+    "--- Bài thực hành ---",
+    "01-vpc-networking",
+    "02-compute-rds",
+    "03-frontend-cdn",
+    "04-security-iam-cicd",
+    "05-operations-monitoring",
+    "06-cleanup-summary"
   ]
 }

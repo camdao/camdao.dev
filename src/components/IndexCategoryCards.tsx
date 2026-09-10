@@ -61,7 +61,7 @@ export function IndexCategoryCards() {
                   <Card
                     key={itemIdx}
                     title={typeof item.name === 'string' ? item.name : 'Folder'}
-                    description={targetPage ? (targetPage as any).description : undefined}
+                    // description={targetPage ? (targetPage as any).description : undefined}
                     href={targetPage ? targetPage.url : '#'}
                   />
                 );
@@ -72,7 +72,7 @@ export function IndexCategoryCards() {
                   <Card
                     key={item.url}
                     title={typeof item.name === 'string' ? item.name : 'Page'}
-                    description={(item as any).description}
+                    // description={(item as any).description}
                     href={item.url}
                   />
                 );
