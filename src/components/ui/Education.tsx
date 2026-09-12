@@ -8,9 +8,23 @@ const Education: React.FC = () => {
         <div key={edu.school} className="mb-4">
           <h3 className="text-lg font-bold">{edu.school}</h3>
           <p className="text-sm">{edu.period}</p>
+
           <ul className="list-disc pl-5">
             {edu.details.map((detail, index) => (
-              <li key={index}>{detail}</li>
+              <li key={index}>
+                {typeof detail === "string" ? (
+                  detail
+                ) : (
+                  <a
+                    href={detail.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline"
+                  >
+                    {detail.label}
+                  </a>
+                )}
+              </li>
             ))}
           </ul>
         </div>
