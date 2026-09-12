@@ -1,0 +1,50 @@
+---
+title: "Isolation"
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Database, ShieldCheck, Lock, Unlock, AlertTriangle, Eye, RefreshCw, GitCommit, Layers, Scale } from 'lucide-react';
+
+#### Overview of Transaction Isolation Levels
+
+![image.png](/images/Isolation/image.png)
+#### REPEATABLE-READ:
+transaction A update but transaction B only read data begining of the transaction.
+we have two transaction concurrently.
+![image](/images/Isolation/1image.png)
+
+firt step: we are start transaction A and B
+we are update transation A "dao6"
+![image](/images/Isolation/2image.png)
+transaction B only read value begining of transaction
+![image](/images/Isolation/3image.png)
+even when you commit transaction A, select in transaction B still Value dao5
+
+when you commit transaction A and B we are select same value.
+
+this repeatable read
+
+#### Read Committed
+![image](/images/Isolation/4image.png)
+we set two transaction read-committed
+![image](/images/Isolation/5image.png)
+
+
+
+update but do not commit, you can see value do not change in transaction B
+aand now i will commit 
+![image](/images/Isolation/6image.png)
+you can see , it readt latest committed data 
+it different with repeat comitted is transation B end then get data. because it firt get data 
+#### X lock
+![image](/images/Isolation/7image.png)
+transaction B wait transaction A commit 
+
+#### Serializable - S lock
+![image](/images/Isolation/8image.png)
+transaction A read and transaction B want update then wait transaction A 
+#### Read Uncommitted - No Lock
+read value do not commit 

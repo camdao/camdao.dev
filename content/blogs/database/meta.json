@@ -1,0 +1,7 @@
+{
+  "title": "Database",
+  "icon": "Database",
+  "pages": [
+    "transaction-isolation-levels"
+  ]
+}
