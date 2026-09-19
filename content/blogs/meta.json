@@ -7,6 +7,8 @@
     "hibernate-orm",
     "---Database---",
     "database",
+    "---Security & Auth---",
+    "jwt/jwt-authentication-storage",
     "---Redis---",
     "redis/redis-lua",
     "---My Project---",
