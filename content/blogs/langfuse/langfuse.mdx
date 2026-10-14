@@ -1,0 +1,44 @@
+---
+title: "Langfuse"
+description: "Giới thiệu về Langfuse"
+icon: DatabaseZap
+---
+
+### Tracing
+Generative AI systems là các hệ thống không xác định. do đó khi mà sửa promt hay cải thiện code khó có thể đoán được những gì xảy ra trong code. do đó tracing sẽ giúp cải thiện điều này.
+Cốt lõi của tracing là ghi lại các request đến model chính xác là ghi lại prompt, token, độ trễ,..
+Ví dụ:
+**Gửi request lên AI**
+![1.png](/images/langfuse/1.png)
+
+![2.png](/images/langfuse/2.png)
+
+### Prompt Management
+Quản quản lưu trữ các phiển bản trong ứng dụng của bạn. thay code cứng trong ứng dụng thì có thể dễ dàng sửa trên Langfuse. Điều này giúp tách biệt code giữa phần mềm và viết promt.
+![3.png](/images/langfuse/3.png)
+![4.png](/images/langfuse/4.png)
+trong code chỉ cần get prompt về sử dụng
+### Evaluation
+Evals là việc đánh giá chất lượng đầu ra của ứng dụng AI
+
+### The AI Engineering Loop
+![5.png](/images/langfuse/5.png)
+Là quá trình teams liên tục cập nhập, kiểm thử và cải thiện ứng dụng. 
+mục tiêu là tính xác suất của kết quả đầu ra của LLM.nhưgn bạn không thể chỉ dựa vào kiểm thử để có thể đảm bảo chính xác. Bạn cần một phương pháp có hệ thống để quan sát, học hỏi và cải thiện thông qua các thí nghiệm.
+#### Hiểu rõ những gì đang diễn ra trong production
+![6.png](/images/langfuse/6.png)
+**Trace**
+Ghi lại toàn bộ quá trình thực thi của một yêu cầu, bao gồm các lời nhắc, ngữ cảnh được truy xuất, các lệnh gọi công cụ, đầu ra, độ trễ và chi phí. Theo dõi là bản ghi thô về những gì hệ thống của bạn thực sự đã làm. 
+**Monitor**
+Theo dõi cách hệ thống hoạt động theo thời gian và cảnh báo những điểm chú ý. Giám sát biến dữ liệu thô thành dữ liệu dễ hiểu về cách hệ thống hoạt.
+#### Cải thiện hệ thống trong quá trình development
+![7.png](/images/langfuse/7.png)
+Phần thứ hai là về việc biến những gì bạn đã quan sát được thành những cải tiến đáng tin cậy mà không làm giảm chất lượng của những phần hệ thống đang hoạt động tốt. Nếu ứng dụng của bạn chưa được đưa vào production, thì tập dữ liệu, thử nghiệm và đánh giá là điểm khởi đầu để bạn có được sự chính xác trong hệ thống trước khi triển khai vào production.
+**Build datasets**
+Thay vì kiểm thử trên một vài dữ liệu thì việc xây dựng dữ liệu thực tế phản ảnh kết quả thực sự production. một dataset có thể chưa các ví dụ từ production hoặc các ví dụ mà AI phải đối mặt.
+**Experiment**
+Thay đổi các prompt model , retrieval strategy có thể so sánh với các bản cũ, điều đó cho thấy rằng code của bạn có cải thiện không thay vì là dự đoán.
+**Evaluate**
+Quyết định xem kết quả có đủ tốt để triển khai hay không bằng cách xem manual review, code evaluator checks, or LLM-as-a-judge.
+### Bạn không cần phải hoàn thành toàn bộ quy trình ngay khi bắt đầu dự án
+Giá trị của vòng lặp này mang tính tích lũy. Mỗi bước bạn thêm vào sẽ mang lại thông tin tốt hơn, phạm vi bao phủ có hệ thống hơn và sự chính xác hơn vào những gì bạn đang làm. Mục tiêu không phải là triển khai mọi thứ cùng một lúc mà là hiểu được hiện tại và tiến thêm một bước nữa để hoàn thiện vòng lặp. Nhiều nhóm bắt đầu bằng việc **tracing** hoặc xây dựng **datasets** khi bắt đầu.
