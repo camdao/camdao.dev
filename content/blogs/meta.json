@@ -3,22 +3,21 @@
   "pages": [
     "---Introduction---",
     "camdao-introduce",
-    "---Hibernate---",
-    "hibernate-orm",
     "---Database---",
     "database",
+    "hibernate-orm",
     "---Security & Auth---",
     "jwt/jwt-authentication-storage",
     "---Redis---",
     "redis/redis-lua",
+      "---LLM---",
+      "langfuse",
     "---My Project---",
     "ticket-project",
     "ticket-project/lua-seat",
     "ai-content-project",
     "---AWS FCAJ---",
     "fcj-workshop",
-    "cloud-thinker",
-    "---LLM---",
-    "langfuse"
+    "cloud-thinker" 
   ]
 }

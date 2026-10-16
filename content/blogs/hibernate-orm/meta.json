@@ -1,6 +1,6 @@
 {
   "title": "Hibernate ORM",
-  "icon": "Database",
+  "icon": "FolderCode",
   "pages": [
     "01-architecture-and-domain-model",
     "02-persistence-context-and-lifecycle",
