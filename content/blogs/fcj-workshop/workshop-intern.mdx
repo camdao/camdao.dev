@@ -1,0 +1,30 @@
+---
+title: "FCJ Workshop Intern"
+description: "Tổng quan về deloy dự án NeonFoodMap lên AWS."
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+import { Server, Network, ShieldCheck, DollarSign, Layers, Globe, Activity } from 'lucide-react';
+
+
+## Sơ đồ Kiến trúc Tổng quan
+
+![Architecture diagram](/images/work-shop-1/diagram1.png)
+
+- CI/CD Pipeline: Sử dụng GitHub Actions để tự động hóa quá trình build, test và deploy ứng dụng lên AWS.
+- ECS (Elastic Container Service): Quản lý và triển khai các container Docker của ứng dụng web, đảm bảo khả năng mở rộng và tính sẵn sàng cao.
+- S3 Static Website Hosting: Lưu trữ các tệp tĩnh của ứng dụng web kết hợp với CloudFront để phân phối nội dung nhanh chóng và bảo mật(CDN)
+- Application Load Balancer kết hợp với Auto Scaling: Cân bằng tải giữa các máy chủ EC2 để đảm bảo hiệu suất và khả năng mở rộng.
+- RDS (Relational Database Service): Cung cấp cơ sở dữ liệu quan hệ để lưu trữ dữ liệu ứng dụng. Standard RDS instances được sử dụng để đảm bảo tính sẵn sàng và khả năng mở rộng.
+- Observability: Sử dụng CloudWatch để giám sát hiệu suất và trạng thái của các dịch vụ AWS, giúp phát hiện sự cố và tối ưu hóa hiệu suất.
+- IAM (Identity and Access Management): Quản lý quyền truy cập và bảo mật cho các dịch vụ AWS, đảm bảo rằng chỉ những người dùng được ủy quyền mới có thể truy cập vào tài nguyên.
+---
+
+## Báo cáo dự án
+- [Repository](http://github.com/camdao/NeonFoodmap)
+- [Internship Report](https://camdao.github.io/fcj-workshop-template/5-workshop/5.1-workshop-overview/)
+- Kết Quả: 7,8/10
+
+![Kết Quả](/images/work-shop-1/image.png)
