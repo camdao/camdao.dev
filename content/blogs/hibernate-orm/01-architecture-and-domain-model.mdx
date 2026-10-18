@@ -1,6 +1,6 @@
 ---
-title: "01. Hibernate Architecture & Domain Model Mapping"
-description: "Tìm hiểu kiến trúc Hibernate ORM và cách ánh xạ Entity, Identifier, Association và Inheritance từ Java sang Database."
+title: "Hibernate Architecture và Domain Model Mapping"
+description: "Tìm hiểu kiến trúc Hibernate ORM và cách ánh xạ Entity từ Java sang Database."
 ---
 
 import { Card, Cards } from 'fumadocs-ui/components/card';
@@ -8,13 +8,13 @@ import { Callout } from 'fumadocs-ui/components/callout';
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Database, Layers, Code2, Cpu, CheckCircle2, AlertTriangle, ShieldCheck, Box } from 'lucide-react';
 
-Khi phát triển ứng dụng Java Backend, việc tương tác trực tiếp với cơ sở dữ liệu quan hệ (RDBMS) bằng JDBC thuần thường dẫn đến nhiều đoạn **boilerplate code**, chẳng hạn như xử lý `ResultSet`, `PreparedStatement`, đồng thời phải tự quản lý quá trình ánh xạ dữ liệu giữa các đối tượng Java và bảng trong cơ sở dữ liệu. Điều này làm phát sinh vấn đề **Object-Relational Impedance Mismatch**.
+Khi phát triển ứng dụng Java Backend, việc tương tác trực tiếp với cơ sở dữ liệu quan hệ (RDBMS) bằng JDBC thuần thường dẫn đến nhiều đoạn **lặp lại code**, chẳng hạn như xử lý quản lý quá trình ánh xạ dữ liệu giữa các đối tượng Java và bảng trong cơ sở dữ liệu.
 
 **Hibernate ORM** đóng vai trò là một framework ORM, giúp giải quyết những vấn đề trên bằng cách tự động ánh xạ các đối tượng Java (POJO) với các bảng trong cơ sở dữ liệu, cũng như chuyển đổi dữ liệu từ database thành các đối tượng Java và ngược lại.
 
 ---
 
-## 1. Kiến trúc Hibernate ORM & JPA
+## 1. Kiến trúc Hibernate ORM & JPA (Quan Trọng)
 
 Hibernate là một JPA Provider (implementation của Jakarta Persistence), cung cấp cơ chế thực thi các API và quy tắc được định nghĩa bởi JPA (Jakarta Persistence).
 
@@ -31,6 +31,7 @@ Hiểu đơn giản:
 
 ---
 
+**(Các phần Dưới biết thêm)**
 ## 2. Tiêu chuẩn của một JPA Entity (POJO Models)
 
 Để Hibernate có thể quản lý một class Java như một **Entity**, class đó phải tuân thủ các quy tắc của **JPA Specification**:

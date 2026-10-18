@@ -1,0 +1,110 @@
+---
+title: Publish/Subscribe
+description: "Publish/Subscribe"
+---
+## Publish/Subscribe Pattern
+Là mẫu thiết kế làm việc với nhiều queue để phân phối message đến nhiều consumer. Khi một message được gửi đến exchange, nó sẽ được phân phối đến tất cả các queue được liên kết với exchange đó. Mỗi consumer sẽ nhận và xử lý các message từ queue của mình.
+## Lab
+![14.png](/images/rabbit/14.png)
+Để mình họa thì chúng ta xây hệ thống logging. Receiver sẽ phát ra và Worker sẽ in ra chúng 
+Trong hệ thống logging, mỗi chương trình Receiver đang chạy đều nhận được cùng một message. Nhờ vậy, ta có thể chạy nhiều Receiver cùng lúc để xử lý log theo những cách khác nhau.
+
+**Exchanges**
+
+Exchanges luôn được dùng trong queue nhưng nếu không định nghĩa thì nó dùng default.
+Nó nhận message từ producers và gửi cho consumers.
+Exchanges phải biết chính xác queue nào được gửi vàp dựa trên các quy tắc được định nghĩa bởi exchanges types.
+
+Exchanges types `direct`, `topic`, `headers` and `fanout`
+
+## Fanout
+Exchanges types `fanout` thì nó chỉ gửi tất cả messages mà nó nhận được tới tất cả queue mà nó biết.
+Nếu chúng ta không khai báo exchanges mà chúng ta dùng "" default của hệ thống, Routing sẽ theo tên queue
+
+### Temporary queues
+trong ví dụ trước chúng ta cần queue với tên cố định, để giữ lại message cũ nhưng trong dự án logs này chúng ta không cần giữ lại logs cũ. 
+thứ nhất chúng ta cần queue rỗng. chúng ta có thể dùng name random
+thứ hai khi ngắt kết nối queue sẽ tự động bị xóa
+
+String queueName = channel.queueDeclare().getQueue();
+
+exclusive = false;
+
+### Bindings
+
+Mối quan hệ giữa exchange và queue là binding
+![15.png](/images/rabbit/15.png)
+
+Producer sẽ phát ra logs.bây giờ chúng ta muốn Producer gửi vào exchange. cung cấp `routingKey` khi gửi tuy nhiên giá trị của nó sẽ không được dùng để định tuyến.
+
+## Direct
+### Routing
+**Bindings**
+ở ví dụ trước
+```
+channel.queueBind(queueName, EXCHANGE_NAME, "");
+```
+chúng ta k dùng `routingKey` do fanout sẽ bỏ qua chúng
+
+channel.queueBind(queueName, EXCHANGE_NAME, "black");
+
+### Direct exchange
+bây giờ chúng ta muốn có điều kiện khác với logs cho tất cả ở bài trước. ví dụ như chúng ta lỗi sẽ gửi đến 1 máy riêng còn info gửi đến 1 máy riêng.
+chúng ta sẽ dùng **direct**, thuật toán của nó đơn giản chỉ cần trùng binding key và routing key thì sẽ gửi tới
+
+![16.png](/images/rabbit/16.png)
+**Multiple bindings**
+![17.png](/images/rabbit/17.png)
+
+Việc đa liên kết là hoàn toàn hợp lệ với cùng bindding key. Với ví dụ trên thì direct exchange sẽ giống fanout gửi cho toàn bộ có key "black".
+
+**Emitting logs**
+
+chúng ta sẽ sử dụng dierct thay vì fanout. bây h tập trung vào tạo logs trước:
+chúng ta sẽ tạp exchange:
+```
+channel.exchangeDeclare(EXCHANGE_NAME, "direct");
+```
+chuẩn bị send một message
+```
+channel.basicPublish(EXCHANGE_NAME, severity, null, message.getBytes());
+```
+
+**Subscribing**
+
+nhận messages sẽ hoạt động giống như ví dụ trước, khác chỗ là chúng ta cần tạo cho mỗi cảnh báo chúng ta muốn
+```
+String queueName = channel.queueDeclare().getQueue();
+
+for(String severity : argv){
+  channel.queueBind(queueName, EXCHANGE_NAME, severity);
+}
+```
+![18.png](/images/rabbit/18.png)
+
+## Topics
+`routing_key` và binding key ko được đặt tùy ý, `routing_key` phải có dấu chấm còn binding cũng vậy. 
+
+`*` Khớp chính xác 1 word
+
+`#` Khớp không hoặc nhiều từ.
+
+![19.png](/images/rabbit/19.png)
+
+`lazy.pink.rabbit` q2 sẽ khớp
+
+`quick.orange.rabbit`q1 sẽ khớp
+
+### Publisher Confirms
+Publisher Confirms là cơ chế giúp Publisher biết được RabbitMQ đã tiếp nhận message thành công hay chưa thông qua xác nhận bất đồng bộ.
+
+bật Publisher Confirms
+```
+Channel channel = connection.createChannel();
+channel.confirmSelect();
+```
+**Strategy #1: Publishing Messages Individually**
+
+**Strategy #2: Publishing Messages in Batches**
+
+**Strategy #3: Handling Publisher Confirms Asynchronously**

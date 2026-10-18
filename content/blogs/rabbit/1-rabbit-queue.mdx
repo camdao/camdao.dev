@@ -1,0 +1,90 @@
+---
+title: Rabbit Queue
+description: "Giới thiệu về Rabbit Queue"
+---
+
+## Rabbit Queue
+Nó được phát triển dựa trên Enterprise Integration Patterns.
+Queue giúp gì:
+- Giúp hệ thống ko phụ thuộc lẫn nhau, giao tiếp độc lập giữa các hệ thống một cách bất đồng bộ.
+- Giúp hệ thống giao tiếp với nhau mà ko phải lo lắng về cách chia sẻ dữ liệu
+
+Nó là hệ thống nhận và gửi messager.
+Producing là người gửi
+QUeue là nơi lưu trữ message
+Consuming là người nhận
+
+## Thực hành với RabbitMQ
+$ docker run --detach --hostname my-rabbit --name some-rabbit \
+    --env RABBITMQ_DEFAULT_USER=user \
+    --env RABBITMQ_DEFAULT_PASS=password \
+    --publish 15672:15672 \
+    --publish 5672:5672 \
+     rabbitmq:management
+
+hostname là tên của node nên đặt tên.
+
+https://github.com/camdao/rabbitmq-demo
+
+https://www.rabbitmq.com
+
+## Point-to-Point Channel
+Là một kênh giao tiếp giữa một producer và một consumer. Producer gửi message vào queue, consumer nhận message từ queue. Một message chỉ được nhận bởi một consumer duy nhất.
+![one-to-one.png](/images/rabbit/one-to-one.png)
+Khi gửi Messager vào như hình, lúc này Queue chứa Messager.
+![2.png](/images/rabbit/2.png)
+Bạn có thể xem trực tiếp trên web
+![3.png](/images/rabbit/3.png)
+Đồng thời queue sẽ được sinh ra.
+![4.png](/images/rabbit/4.png)
+Bên luồng nhận
+![5.png](/images/rabbit/5.png)
+Chúng ta xử dụng hàm DeliverCallback để xử lý messager từ queue.
+Rabbit sẽ gửi bất đồng bộ tới consumer.DeliverCallback thực hiện khi mà Rabbit gọi đến comsumer.
+Receiving sẽ đợi tin nhắn và lấy ra xử lý xog sẽ xóa khỏi queue.
+![6.png](/images/rabbit/6.png)
+
+
+## Message acknowledgment
+
+| Cơ chế   | Ý nghĩa                                                                           |
+| -------- | --------------------------------------------------------------------------------- |
+| `ACK`    | Consumer báo đã xử lý thành công; RabbitMQ có thể xóa message khỏi queue.         |
+| `NACK`   | Consumer báo không xử lý được message; có thể đưa lại queue hoặc loại bỏ message. |
+| `Reject` | Từ chối một message; cũng có thể requeue hoặc loại bỏ.                            |
+
+## Delivery guarantees
+| Cơ chế        | Ý nghĩa                                                  | Đánh đổi                               |
+| ------------- | -------------------------------------------------------- | -------------------------------------- |
+| At-most-once  | Giao tối đa một lần                                      | Có thể mất message                     |
+| At-least-once | Giao ít nhất một lần theo cơ chế retry                   | Có thể trùng message                   |
+| Exactly-once  | Mỗi tác động được tính đúng một lần theo phạm vi bảo đảm | Khó đạt được xuyên suốt nhiều hệ thống |
+
+**At-least-once**
+- Người dùng phải chấp nhận rằng phải xếp hàng lại nếu xảy ra lỗi. Nếu consumer bị sập thì RabbitMQ sẽ giữ lại tin nhắn và gửi lại có thể gửi cho consumer khác đang hoạt động
+- Delivery Acknowledgement Timeout:  nếu quá thời gian mà chưa làm xong thì đóng channel lại, hệ quả thì message sẽ đưa lại queue để giao consumer khác
+-  Timeout mặc định là 30 phút
+
+## Message durability
+
+Chúng ta đã tìm hiểu cách xử lý khi consumer gặp sự cố để tránh mất message hoặc bỏ dở task. Tuy nhiên, message vẫn có thể bị mất nếu chính RabbitMQ gặp sự cố hoặc khởi động lại, nếu chưa được cấu hình lưu trữ phù hợp.
+
+**Durable và Exclusive queue**
+
+- **Durable queue:** Nếu `durable = false`, queue sẽ bị xóa khi RabbitMQ restart. Nếu `durable = true`, queue được giữ lại sau khi restart.
+- **Non-exclusive queue:** Với `exclusive = false`, queue không bị giới hạn cho connection tạo ra nó. Các connection khác có thể sử dụng queue nếu có quyền truy cập phù hợp.
+
+Non-exclusive queue phù hợp với các queue dùng chung giữa producer và consumer. Tuy nhiên, nếu ứng dụng tạo queue chỉ để sử dụng tạm thời, queue có thể vẫn tồn tại sau khi ứng dụng tắt nếu không được cấu hình tự xóa. Nếu ứng dụng liên tục tạo queue với tên mới, các queue cũ không còn được sử dụng có thể tích tụ và chiếm tài nguyên.
+
+**Nên bật Durable**
+
+Với các queue xử lý công việc quan trọng, nên bật `durable = true` để queue tồn tại sau khi RabbitMQ restart. Tuy nhiên, durable queue chỉ đảm bảo sự tồn tại của queue, không tự động đảm bảo mọi message bên trong đều được lưu bền vững. Để tăng độ tin cậy, cần kết hợp persistent message và publisher confirms.
+
+Thử nghiệm với **durable = true**
+![10.png](/images/rabbit/10.png)
+Hiện tại đang có 1 messager
+![11.png](/images/rabbit/11.png)
+Chúng ta sẽ reset lại contaier
+![12.png](/images/rabbit/12.png)
+Tin nhắn và queue vẫn còn
+

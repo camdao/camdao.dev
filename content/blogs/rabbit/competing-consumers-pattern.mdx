@@ -1,0 +1,24 @@
+---
+title: Competing Consumers Pattern
+description: "Competing Consumers Pattern"
+---
+## Competing Consumers Pattern
+Là mẫu thiết kế nơi nhiều consumer cùng lắng nghe một hàng đợi và xử lý các message từ hàng đợi đó. Mỗi consumer sẽ nhận và xử lý các message một cách độc lập, giúp tăng khả năng xử lý và giảm thời gian chờ đợi.
+
+## Lab
+![13.png](/images/rabbit/13.png)
+Tiến hành run 2 Worker cùng lắng nghe một hàng đợi và xử lý các message từ hàng đợi đó.
+![7.png](/images/rabbit/7.png)
+Sau đó chúng ta gửi Task vào Queue
+![8.png](/images/rabbit/8.png)
+Mặc đinh sẽ dùng Round-robin
+Nghĩa là chia các message vào các consumer theo lượt, ví dụ có 2 consumer thì message 1 sẽ vào consumer 1, message 2 sẽ vào consumer 2, message 3 sẽ vào consumer 1, message 4 sẽ vào consumer 2, ...
+![9.png](/images/rabbit/9.png)
+
+**Fair dispatch**
+Nếu các task số chẵn nặng hơn task số lẻ điều này gây ra nặng cho 1 worker 
+Giải pháp là nếu worker nào đang xử lý task nặng thì sẽ không nhận thêm task mới cho đến khi hoàn thành task hiện tại. Điều này giúp cân bằng tải giữa các consumer và tránh tình trạng một consumer bị quá tải trong khi các consumer khác lại nhàn rỗi.
+
+`initialCredits(1)` giới hạn số message mà broker có thể giao cho consumer dựa trên credit ban đầu là 1.Khi Worker 1 đang bận xử lý A, broker có thể giao B cho Worker 2 thay vì tiếp tục đẩy thêm task cho Worker 1.
+
+
