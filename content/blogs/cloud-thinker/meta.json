@@ -1,8 +1,4 @@
 {
   "title": "Event - Cloud Thinker",
-  "icon": "CloudFog",
-
-  "pages": [
-    "prove-it"
-  ]
+  "icon": "CloudFog"
 }
