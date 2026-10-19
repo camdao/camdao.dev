@@ -1,0 +1,67 @@
+---
+title: "Call Back"
+description: "Call Back"
+---
+
+## Mục đích
+Mẫu thiết kế này giống như là 1 phần tệp thực thi code được truyền vào biến của code khác, nó sẽ được gọi vào thời điểm thích hợp.
+
+**Example**
+
+Mẫu này được dùng trong nhà hàng ở thể giới thực. tưởng tượng tình huống nói đặt đồ ăn ở một quán đông đúc. thay vì đợi tại quầy đến khi thức ăn được giao cho bạn thì bạn cung cấp cho người bán số điện thoại của bạn. Sau khi đơn hàng của bạn hoàn tốt thì họ sẽ thông báo cho bạn.
+
+![pattern.png](/images/pattern/pattern.png)
+
+## Code mẫu
+```
+public interface Callback {  
+    void call();  
+}
+
+public final class SimpleTask extends Task {  
+  
+    @Override  
+    public void execute() {  
+        System.out.println("Perform some important activity and after call the callback method.");  
+    }  
+}
+
+public abstract class Task {  
+  
+    final void executeWith(Callback callback) {  
+        execute();  
+        Optional.ofNullable(callback).ifPresent(Callback::call);  
+    }  
+  
+    public abstract void execute();  
+}
+
+public class Main {  
+    public static void main(String[] args) {  
+        var task = new SimpleTask();  
+        task.executeWith(() -> System.out.println("I'm done now."));  
+    }  
+}
+```
+
+## Khi nào cần dùng
+- Khi cần xử lý bất đồng bộ trung giao diện hoặc là trong evenr driven systems.
+- Triển khai cơ chế thống báo, trong đó một số sự kiện cần kích hoạt ở các thành phần khác.
+- tách rời modeles hoặc components khi khi cần tương tác với nhau mà không phụ thuộc lẫn nhau.
+**Example**
+- GUI frameworks thường dùng callback cho event handling, như là click,..
+- node.js sử dụng cho non-blocking I/O
+- như Promises trong JavaScript, dùng callbacks để xử lý hoặc từ chối các tast bất đồng bộ
+## Lợi ích và Trade-offs
+**Benefits**:
+- Tách rời logic thực thi khỏi thông báo.
+- hỗ trợ bất đồng bộ cải thiện phản hồi ứng dụng
+- lập trình phản ứng khi các sự kiện sảy ra
+
+**Trade-offs**:
+
+- Khó khăn nếu callback lồng sau khiên code trở nên khó đọc và bảo trì
+- Đảo ngược quyền khiến khả năng debug khó khăn
+- tiềm ẩn việc xử lý ngoại lệ nếu không xử lý tốt
+
+https://java-design-patterns.com/patterns/callback/

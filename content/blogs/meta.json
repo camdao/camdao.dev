@@ -10,6 +10,8 @@
     "jwt/jwt-authentication-storage",
     "---Redis---",
     "redis/redis-lua",
+    "---Pattern---",
+    "pattern",
     "---LLM---",
     "langfuse",
     "---Message Queue---",
