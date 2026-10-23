@@ -8,6 +8,8 @@
     "hibernate-orm",
     "---Testing---",
     "performance-testing/performance-testing",
+    "---Cache---",
+    "cache/strategies",
     "---Security & Auth---",
     "jwt/jwt-authentication-storage",
     "---Redis---",

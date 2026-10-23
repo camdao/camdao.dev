@@ -1,0 +1,62 @@
+---
+title: Chiến lược vô hiệu hóa cache
+description: "Chiến lược vô hiệu hóa cache"
+---
+Vô hiệu hóa cache là quá trình xóa hoặc thay thế bộ nhớ đệm không khớp với dữ liệu gốc.
+Trong bài này chúng ta sẽ tìm hiểu các chiến lược vô hiệu hóa cache, vô hiệu khác với xóa bỏ như nào, tại sao vô hiệu khó khăn khi mà nhiều cache được phân tán trên nhiều nodes, Cơ chế vô hiệu hoạt động như nào trong Valkey và Redis.
+## Tại sao vô hiệu cache khó khăn
+Thì có nói đùa quen thuộc là có 2 vấn đề trong computer science là vô hiệu cache và đặt tên cho mọi thứ. Lý do mà việc vô hiệu hóa cache không phải là một vấn đề duy nhất mà nó xung đột giữa 3 mục tiêu và không thể tối đa hóa chúng cùng lúc:
+
+**Freshness**: Dữ liệu cache nên đồng bộ với giữ liệu nguồn các sát càng tốt
+
+**Performance**: Đọc cache phải nhanh, hạn chế truy vấn database hoặc kiểm tra dữ liệu qua mạng mỗi lần đọc.
+
+**Cost**: Hạn chế tài nguyên CPU, bộ nhớ, truy vấn database và lưu lượng mạng phát sinh từ việc đồng bộ, kiểm tra hoặc vô hiệu hóa cache.
+
+Các chiến lược dưới đây sẽ cho các bạn biết đánh đối để được những lợi ích nào. Không có cấu hình nào không phải đánh đổi.
+
+Khó khăn thứ 2 là thứ tự, một cache ở trong một vài nơi như trình duyệt, CDN, ứng local cache. Một thao tác ghi phải truyền qua cho tất cả và nếu các bản cập nhật được thực hiện không theo thứ tự, một lớp có thể tự cập nhật lại giá trị vừa bị vô hiệu hóa.
+
+## Các chiến lược
+### Time-based invalidation
+Đây là chiến lược đơn giản nhất. Mỗi mục lưu trữ có Time to live(TTL), Tự động hết hạn theo thời gian quy định. Không cần thông báo hủy bỏ, điều này làm cho TTL trở nên rẻ và tốt.
+
+Đổi lại là độ trễ: với 60 giây TTL thì chấp nhận là trong 60 giây đó dữ liệu có thể đã cũ. Điều này ổn cho một danh sách sản phẩm nhưng nó không ổn nếu bạn dùng cho số dư tài khoản. Thiết lập TTL cho mỗi dữ liệu tốt hơn thiết lập TTL cho toàn bộ.
+### Event-based (write-through) invalidation
+Cache được cập nhập hoặc loại bỏ khi thao tác ghi thay đổi dữ liệu ở data. Vì vô hiệu cache sảy ra cùng với sự kiện gây ra nó nên độ trễ gần như không.
+
+Đây là [write-through and write-behind caching](https://redisson.pro/glossary/write-through-and-write-behind-caching.html).  Đánh đổi lại sự coupling: ngĩa là mọi phần code viết vào databse phải vô hiệu cache. Nếu luồng ghi vào database mà quên vô hiệu cache thì cache sẽ không được xóa cho đến khi TTL hết hạn. đó là lý do sao bạn nên dùng TTL ngay cả khi dùng Event-based.
+
+### Command-based invalidation (purge)
+Một lệnh để chi rõ cache hoặc một nhóm cache. lệnh này có thể kích hoặt với admin,deloy,...lệnh này có tính chính xác cao và thường là giải pháp khi có sự cố nhưng về bản chất thì nó vẫn là thực hiện thủ công và không thể mở rộng nếu như dùng làm chiến lực chính.
+
+### Group- or tag-based invalidation
+các tag được dùng chung và khi vô hiệu tag thì tất cả sẽ được vô hiệu. Một trang thương mại điện tử khi cập nhật danh mục sản phẩm có thể vô hiệu hóa thẻ của danh mục đó thay vì liệt kê từng khóa sản phẩm bị ảnh hưởng.
+
+Điều này giải quyết vấn đề phụ thuộc.trong đó một mục được lưu trong bộ nhớ đệm bắt nguồn từ một mục khác.Rủi ro nằm ở việc vô hiệu hóa: một thẻ được gán quá rộng sẽ loại bỏ nhiều dữ liệu được lưu trong bộ nhớ cache hơn mức thay đổi cần thiết, gây ra hiện tượng lỗi bộ nhớ cache không đáng có.
+
+### Version-based invalidation (key versioning)
+Thay vì xóa một mục đã lỗi thời, Việc vô hiệu hóa dựa trên phiên bản khiến nó không thể truy cập được bằng cách thay đổi khóa. Version được nhúng trong chính khóa bộ nhớ đệm và thao tác ghi sẽ tăng Version này lên:
+```
+user:42:profile:v7 # current 
+user:42:profile:v8 # after a write bumps the version
+```
+Version-based invalidation không cần xóa cache cũ. Thay vào đó, nó đổi version trong cache key để ứng dụng không truy cập vào cache cũ nữa
+
+Biến thể khiến Version-based Invalidation trở nên đặc biệt hữu ích là Generational Invalidation, trong đó version được gắn với cả một namespace thay vì chỉ một entity riêng lẻ.
+
+```
+products:gen12:item:99
+products:gen12:list:page1
+products:gen12:category:shoes
+```
+
+Thì khi tăng version thì các cache cũ không được sử dụng gây ra thêm chi phí
+
+| Strategy              | Staleness               | Coordination cost               | Best for                                                  |
+| --------------------- | ----------------------- | ------------------------------- | --------------------------------------------------------- |
+| **Time-based (TTL)**  | Bounded by the TTL      | None                            | Most data; always worth setting as a backstop             |
+| **Event-based**       | Near zero               | Every writer must invalidate    | Data where correctness matters more than write throughput |
+| **Command-based**     | Zero, when it runs      | Manual                          | Deploys, incidents, targeted fixes                        |
+| **Group / tag-based** | Near zero for the group | Tag bookkeeping                 | Related entries that must change together                 |
+| **Version-based**     | Near zero               | One counter read per cache read | Bulk invalidation; avoiding stale repopulation            |
